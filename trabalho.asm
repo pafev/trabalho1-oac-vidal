@@ -18,7 +18,7 @@ main:
 
     la $a0, inputContentBuffer  # ponteiro para o conteudo normalizado do arquivo .asm
     jal splitInputFile
- 
+
     # la $a0, inputDataSection  # ponteiro do .data do arquivo .asm
     # jal encodeDataSection
 
