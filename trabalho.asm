@@ -1,46 +1,44 @@
 .data
-filePathBuffer: .space 50
-inputContentBuffer: .space 1024
-inputDataSection: .space 512
-inputTextSection: .space 512
-outputDataSection: .space 768
-outputTextSection: .space 768
+filepath: .space 50
+output_filepath: .space 55
+asm_content: .space 1024
+asm_data_section: .space 512
+asm_text_section: .space 512
+mif_data_content: .space 768
+mif_text_content: .space 768
+label_buffer: .space 20
 
 .text
 .globl main
 
 main:
-    la $a0, inputContentBuffer  # ponteiro para o buffer que irá armazenar o conteudo do arq de entrada
-    jal getInputFile
+    la $a0, asm_content  # ponteiro para o buffer que irá armazenar o conteudo do arq de entrada
+    jal get_input_file
 
-    la $a0, inputContentBuffer  # ponteiro para o conteudo do arquivo .asm
-    jal normalizeContent
+    la $a0, asm_content  # ponteiro para o conteudo do arquivo .asm
+    jal format_content
 
-    la $a0, inputContentBuffer  # ponteiro para o conteudo normalizado do arquivo .asm
-    jal splitInputFile
+    la $a0, asm_content  # ponteiro para o conteudo normalizado do arquivo .asm
+    jal split_asm_content
 
-    # la $a0, inputDataSection  # ponteiro do .data do arquivo .asm
-    # jal encodeDataSection
+    la $a0, asm_data_section  # ponteiro do .data do arquivo .asm
+    jal encode_data_asm
 
-    # la $a0, headerDataMif
-    # la $a1, outputDataSection  # ponteiro do conteudo do arquivo .mif do data
-    # la $a2, footerMif
-    # jal generateMif
+    move $a0, $v0  # tamanho do mif_data_content
+    jal generate_data_mif
 
-    # la $a0, inputTextSection  # ponteiro do .text do arquivo .asm
-    # jal encodeTextSection
+    la $a0, asm_text_section  # ponteiro do .text do arquivo .asm
+    jal encode_text_asm
 
-    # la $a0, headerTextMif
-    # la $a1, outputTextSection  # ponteiro do conteudo do arquivo .mif do text
-    # la $a2, footerMif
-    # jal generateMif
+    move $a0, $v0  # tamanho do mif_text_content
+    jal generate_text_mif
 
     jal end
 
 
 ## Entrada: $a0: ponteiro para buffer que irá armazenar conteúdo do arquivo
 ## Saida: nada, pois o próprio buffer irá armazenar o conteúdo do arquivo
-getInputFile:
+get_input_file:
     # prepara a pilha
     addi $sp, $sp, -4
     sw $ra, 0($sp)  # guarda o ra
@@ -48,25 +46,25 @@ getInputFile:
     move $s0, $a0
     # imprime mensagem para obter caminho do arquivo
     li $v0, 4
-    la $a0, promptInputFile
+    la $a0, prompt_input_filepath
     syscall
     # pega a entrada do usuário
     li $v0, 8
-    la $a0, filePathBuffer
+    la $a0, filepath
     la $a1, 50
     syscall
     # remove o '\n' no final da entrada do usuário
-    la $a0, filePathBuffer
-    jal removeNewLine
+    la $a0, filepath
+    jal remove_newline
     # abre arquivo a partir do caminho passado pelo usuario
     li $v0, 13
-    la $a0, filePathBuffer
+    la $a0, filepath
     li $a1, 0
     li $a2, 0
     syscall
     # verifica se abriu corretamente
     slt $t1, $v0, $zero
-    bne $t1, $zero, errorOpenInputFile
+    bne $t1, $zero, error_open_file
     # guardando descritor do arquivo
     move $t0, $v0
     # lendo arquivo e guardando conteudo
@@ -87,150 +85,315 @@ getInputFile:
 
     ## Entrada: $a0: ponteiro para a string com newline
     ## Saida: nada, pq a manipulacao já é na string com newline
-    removeNewLine:
+    remove_newline:
         move $t0, $a0
-        loopRemoveNewLine:
+        loop_remove_newline:
             lb $t1, 0($t0)
             addi $t0, $t0, 1
-            bne $t1, '\n', loopRemoveNewLine
+            bne $t1, '\n', loop_remove_newline
             sb $zero, -1($t0)
             jr $ra
 
 
 ## Entrada: $a0: ponteiro para o conteudo asciiz a ser normalizado
 ## Saida: nada, o próprio conteudo é diretamente normalizado
-normalizeContent:
+format_content:
     move $t0, $a0  # guarda ponteiro para iterar em todos os chars do conteudo
     move $t3, $a0  # guarda ponteiro para sobrescrever conteudo com chars adequados
     # procurando pelo começo da linha
-    searchForStart:
+    search_for_start_line:
         lb $t1, 0($t0)
         addi $t0, $t0, 1
-        beq $t1, '\n', searchForStart
-        beq $t1, ' ', searchForStart
-        beq $t1, $zero, endNormalizeContent
+        beq $t1, '\n', search_for_start_line
+        beq $t1, ' ', search_for_start_line
+        beq $t1, $zero, end_format_content
         addi $t0, $t0, -1
-        j loopNormalizeLine
+        j loop_format_line
     # após encontrar começo da linha, normalizando ela
-    loopNormalizeLine:
+    loop_format_line:
         lb $t1, 0($t0)  # bite atual
         lb $t2, 1($t0)  # bite atual + 1
         addi $t0, $t0, 1
         # checa se é um espaço repetido
-        bne $t1, ' ', skipCheckSpace
-        beq $t2, ' ', loopNormalizeLine
-        beq $t2, '\n', loopNormalizeLine
-        beq $t2, ',', loopNormalizeLine
-        skipCheckSpace:
-        beq $t1, $zero, endNormalizeContent  # checa se é o fim do conteudo original
+        bne $t1, ' ', skip_check_space
+        beq $t2, ' ', loop_format_line
+        beq $t2, '\n', loop_format_line
+        beq $t2, ',', loop_format_line
+        beq $t2, ':', loop_format_line
+        skip_check_space:
+        beq $t1, $zero, end_format_content  # checa se é o fim do conteudo original
         sb $t1, 0($t3)  # guarda char "que pode ser guardado" no conteudo
         addi $t3, $t3, 1
-        beq $t1, '\n', searchForStart  # checa se é o fim da linha que está sendo normalizada
-        j loopNormalizeLine  # continua normalizando
-    endNormalizeContent:  # fim do conteudo
+        beq $t1, '\n', search_for_start_line  # checa se é o fim da linha que está sendo normalizada
+        j loop_format_line  # continua normalizando
+    end_format_content:  # fim do conteudo
         sb $zero, 0($t3)
         jr $ra
 
 
 ## Entrada: $a0: ponteiro para o conteudo do arquivo .asm
-## Saida: nada, pois os conteudos de .data e .text estarão em inputDataSection e inputTextSection, respectivamente
-splitInputFile:
+## Saida: nada, pois os conteudos de .data e .text estarão em asm_data_section e asm_text_section, respectivamente
+split_asm_content:
     move $t0, $a0
     move $t2, $zero  # ponteiro dataSection
     move $t3, $zero  # ponteiro textSection
-    startSearchDirective:
+    start_search_directive:
     addi $t7, $zero, 1
-    searchForDirective:
+    search_directive:
         lb $t1, 0($t0)
         addi $t0, $t0, 1
-        bne $t1, '.', skipCheckDirective
-        bne $t7, $zero, checkDirective
-        skipCheckDirective:
-        beq $t1, $zero, endSplitInputFile
-        beq $t1, '\n', startSearchDirective
+        bne $t1, '.', skip_check_directive
+        bne $t7, $zero, check_directive
+        skip_check_directive:
+        beq $t1, $zero, end_split_asm_content
+        beq $t1, '\n', start_search_directive
         move $t7, $zero
-        j searchForDirective
-    checkDirective:
+        j search_directive
+    check_directive:
         lb $t1, 0($t0)
-        bne $t1, 'd', checkTextDirective
+        bne $t1, 'd', check_text_directive
         lb $t1, 1($t0)
-        bne $t1, 'a', isntDirective
+        bne $t1, 'a', isnt_directive
         lb $t1, 2($t0)
-        bne $t1, 't', isntDirective
+        bne $t1, 't', isnt_directive
         lb $t1, 3($t0)
-        bne $t1, 'a', isntDirective
+        bne $t1, 'a', isnt_directive
         lb $t1, 4($t0)
-        bne $t1, '\n', isntDirective
+        bne $t1, '\n', isnt_directive
         addi $t0, $t0, 5
-        j getLineDataSection
-        checkTextDirective:
-        bne $t1, 't', isntDirective
+        j get_lines_data
+        check_text_directive:
+        bne $t1, 't', isnt_directive
         lb $t1, 1($t0)
-        bne $t1, 'e', isntDirective
+        bne $t1, 'e', isnt_directive
         lb $t1, 2($t0)
-        bne $t1, 'x', isntDirective
+        bne $t1, 'x', isnt_directive
         lb $t1, 3($t0)
-        bne $t1, 't', isntDirective
+        bne $t1, 't', isnt_directive
         lb $t1, 4($t0)
-        bne $t1, '\n', isntDirective
+        bne $t1, '\n', isnt_directive
         addi $t0, $t0, 5
-        j getLineTextSection
-        isntDirective:
-        j searchForDirective
-    getLineDataSection:
+        j get_lines_text
+        isnt_directive:
+        j search_directive
+    get_lines_data:
         addi $t7, $zero, 1
-        getCharDataSection:
+        get_chars_data:
             lb $t1, 0($t0)
-            bne $t1, '.', skipCheckEndDataSection
+            bne $t1, '.', skip_check_end_data
             lb $t4, 1($t0)
-            beq $t4, 'd', searchForDirective
-            beq $t4, 't', searchForDirective
-            skipCheckEndDataSection:
+            beq $t4, 'd', search_directive
+            beq $t4, 't', search_directive
+            skip_check_end_data:
             addi $t0, $t0, 1
-            beq $t1, $zero, endSplitInputFile
-            sb $t1, inputDataSection($t2)
+            beq $t1, $zero, end_split_asm_content
+            sb $t1, asm_data_section($t2)
             addi $t2, $t2, 1
-            beq $t1, '\n', getLineDataSection
+            beq $t1, '\n', get_lines_data
             move $t7, $zero
-            j getCharDataSection
-    getLineTextSection:
+            j get_chars_data
+    get_lines_text:
         addi $t7, $zero, 1
-        getCharTextSection:
+        get_chars_text:
             lb $t1, 0($t0)
-            bne $t1, '.', skipCheckEndTextSection
+            bne $t1, '.', skip_check_end_text
             lb $t4, 1($t0)
-            beq $t4, 'd', searchForDirective
-            beq $t4, 't', searchForDirective
-            skipCheckEndTextSection:
+            beq $t4, 'd', search_directive
+            beq $t4, 't', search_directive
+            skip_check_end_text:
             addi $t0, $t0, 1
-            beq $t1, $zero, endSplitInputFile
-            sb $t1, inputTextSection($t3)
+            beq $t1, $zero, end_split_asm_content
+            sb $t1, asm_text_section($t3)
             addi $t3, $t3, 1
-            beq $t1, '\n', getLineTextSection
+            beq $t1, '\n', get_lines_text
             move $t7, $zero
-            j getCharTextSection
-    endSplitInputFile:
-        sb $zero, inputDataSection($t2)
-        sb $zero, inputTextSection($t3)
+            j get_chars_text
+    end_split_asm_content:
+        sb $zero, asm_data_section($t2)
+        sb $zero, asm_text_section($t3)
         jr $ra
+
+
+## Entrada: $a0: ponteiro para o conteudo a ser montado
+## Saida: $v0: tamanho do mif_data_content
+encode_data_asm:
+move $v0, $zero
+jr $ra
+
+
+## Entrada: $a0: ponteiro para o conteudo a ser montado
+## Saida: $v0: tamanho do mif_text_content
+encode_text_asm:
+move $v0, $zero
+jr $ra
+
+
+## Entrada: $a0: tamanho do mif_data_content
+## Saida: nada, pois será gerado o arquivo automaticamente a partir dos conteudo pro data.mif
+generate_data_mif:
+addi $sp, $sp, -4
+sw $ra, 0($sp)
+move $s0, $a0
+jal generate_filepath_data_output
+# abrindo arquivo
+li $v0, 13
+la $a0, filepath
+li $a1, 1  # modo escrita
+syscall
+move $a0, $v0  # descritor do arquivo aberto está em v0
+# escrevendo a string no arquivo
+li $v0, 15
+la $a1, header_mif_data
+li $a2, 81
+syscall
+li $v0, 15
+la $a1, mif_data_content
+move $a2, $s0
+syscall
+li $v0, 15
+la $a1, footer_mif
+li $a2, 7
+syscall
+# fechando arquivo
+li $v0, 16
+syscall
+# restaurando pilha
+lw $ra, 0($sp)  # recupera ra
+addi $sp, $sp, 4
+jr $ra
+
+
+## Entrada: nada
+## Saida: nada, pois será alterado diretamente o filepath
+generate_filepath_data_output:
+move $t0, $zero
+search_dot_filepath:
+lb $t1, filepath($t0)
+addi $t0, $t0, 1
+bne $t1, '.', search_dot_filepath
+addi $t0, $t0, -1
+li $t1, 95
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 100
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 97
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 116
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 97
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 46
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 109
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 105
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 102
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+sb $zero, filepath($t0)
+jr $ra
+
+
+## Entrada: $a0: tamanho do mif_text_content
+## Saida: nada, pois será gerado o arquivo automaticamente a partir dos conteudo pro text mif
+generate_text_mif:
+addi $sp, $sp, -4
+sw $ra, 0($sp)
+move $s0, $a0
+jal generate_filepath_text_output
+# abrindo arquivo
+li $v0, 13
+la $a0, filepath
+li $a1, 1  # modo escrita
+syscall
+move $a0, $v0  # descritor do arquivo aberto está em v0
+# escrevendo a string no arquivo
+li $v0, 15
+la $a1, header_mif_text
+li $a2, 80
+syscall
+li $v0, 15
+la $a1, mif_text_content
+move $a2, $s0
+syscall
+li $v0, 15
+la $a1, footer_mif
+li $a2, 7
+syscall
+# fechando arquivo
+li $v0, 16
+syscall
+# restaurando pilha
+lw $ra, 0($sp)  # recupera ra
+addi $sp, $sp, 4
+jr $ra
+
+
+## Entrada: nada
+## Saida: nada, pois será alterado diretamente o filepath
+generate_filepath_text_output:
+move $t0, $zero
+search_dot_filepath2:
+lb $t1, filepath($t0)
+addi $t0, $t0, 1
+bne $t1, '.', search_dot_filepath2
+addi $t0, $t0, -6
+li $t1, 95
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 116
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 101
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 120
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 116
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 46
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 109
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 105
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+li $t1, 102
+sb $t1, filepath($t0)
+addi $t0, $t0, 1
+sb $zero, filepath($t0)
+jr $ra
 
 
 ## Entrada: nada
 ## Saida: nada
-errorOpenInputFile:
+error_open_file:
     # imprime a mensagem
 	li $v0, 4
-    la $a0, errorOpenInputFileMsg
+    la $a0, error_open_file_msg
 	syscall
 	j end
 
 
 ## Entrada: nada
 ## Saida: nada
-errorSyntax:
+error_syntax:
     # imprime a mensagem
     li $v0, 4
-    la $a0, errorSyntaxMsg
+    la $a0, error_syntax_msg
     syscall
     j end
 
@@ -242,12 +405,9 @@ end:
     syscall
 
 .data
-headerDataMif: .asciiz "DEPTH = 16384;\nWIDTH = 32;\nADDRESS_RADIX = HEX;\nDATA_RADIX = HEX;\nCONTENT\nBEGIN\n\n"
-headerTextMif: .asciiz "DEPTH = 4096;\nWIDTH = 32;\nADDRESS_RADIX = HEX;\nDATA_RADIX = HEX;\nCONTENT\nBEGIN\n\n"
-footerMif: .asciiz "\n\nEND;\n"
-promptInputFile: .asciiz "Digite o caminho do arquivo .asm (completo): "
-errorOpenInputFileMsg: .asciiz "Error: Nao foi possivel ler o arquivo"
-errorSyntaxMsg: .asciiz "Error: Erro de sintaxe no codigo"
-
-dataDirective: .asciiz "data"
-textDirective: .asciiz "text
+header_mif_data: .asciiz "DEPTH = 16384;\nWIDTH = 32;\nADDRESS_RADIX = HEX;\nDATA_RADIX = HEX;\nCONTENT\nBEGIN\n\n"
+header_mif_text: .asciiz "DEPTH = 4096;\nWIDTH = 32;\nADDRESS_RADIX = HEX;\nDATA_RADIX = HEX;\nCONTENT\nBEGIN\n\n"
+footer_mif: .asciiz "\n\nEND;\n"
+prompt_input_filepath: .asciiz "Digite o caminho do arquivo .asm (completo): "
+error_open_file_msg: .asciiz "Error: Nao foi possivel ler o arquivo"
+error_syntax_msg: .asciiz "Error: Erro de sintaxe no codigo"
