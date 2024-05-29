@@ -7,6 +7,12 @@ asm_text_section: .space 512
 mif_data_content: .space 768
 mif_text_content: .space 768
 label_buffer: .space 20
+mif_addr_buffer: .space 9
+mif_value_buffer: .space 9
+mif_line_buffer: .space 22
+labels: .space 128
+int_asciiz_buffer: .space 11
+hex_asciiz_buffer: .space 9
 
 .text
 .globl main
@@ -106,22 +112,29 @@ format_content:
         addi $t0, $t0, 1
         beq $t1, '\n', search_for_start_line
         beq $t1, ' ', search_for_start_line
+        beq $t1, ',', search_for_start_line
         beq $t1, $zero, end_format_content
         addi $t0, $t0, -1
         j loop_format_line
     # após encontrar começo da linha, normalizando ela
     loop_format_line:
         lb $t1, 0($t0)  # bite atual
-        lb $t2, 1($t0)  # bite atual + 1
         addi $t0, $t0, 1
-        # checa se é um espaço repetido
+        # ignora virgulas
+        beq $t1, ',', loop_format_line
+        # checa se é um espaço repetido e, se sim, o ignora
         bne $t1, ' ', skip_check_space
+        lb $t2, 0($t0)  # bite atual + 1
         beq $t2, ' ', loop_format_line
         beq $t2, '\n', loop_format_line
         beq $t2, ',', loop_format_line
         beq $t2, ':', loop_format_line
+        beq $t2, ')', loop_format_line
+        lb $t2, -2($t0)
+        beq $t2, ':', loop_format_line
+        beq $t2, '(', loop_format_line
         skip_check_space:
-        beq $t1, $zero, end_format_content  # checa se é o fim do conteudo original
+        beq $t1, $zero, end_format_content  # fim do conteudo original
         sb $t1, 0($t3)  # guarda char "que pode ser guardado" no conteudo
         addi $t3, $t3, 1
         beq $t1, '\n', search_for_start_line  # checa se é o fim da linha que está sendo normalizada
@@ -217,7 +230,44 @@ split_asm_content:
 ## Entrada: $a0: ponteiro para o conteudo a ser montado
 ## Saida: $v0: tamanho do mif_data_content
 encode_data_asm:
-move $v0, $zero
+addi $sp, $sp, -4
+sw $ra, 0($sp)
+lw $ra, 0($sp)
+addi $sp, $sp, 4
+jr $ra
+
+
+## Entrada: $a0: endereço do mif_addr_buffer
+##          $a1: endereço do mif_value_buffer
+## Saida: nada, pois o próprio mif_line_buffer será alterado
+generate_mif_line:
+jr $ra
+
+
+## Entrada: $a0: endereço do label_buffer
+##          $a1: valor em int do endereço da label no mips
+## Saida: nada, pois o próprio valor de labels é alterado
+save_label:
+jr $ra
+
+
+## Entrada: $a0: valor em int do endereço da label no mips
+## Saida: nada, pois o próprio valor de label_addr_buffer é alterado
+convert_int_to_label_addr:
+jr $ra
+
+
+## Entrada: #a0: tamanho do hex_asciiz_buffer
+##          $a1: endereço do int_asciiz_buffer
+## Saida: nada, pois o próprio hex_asciiz_buffer é alterado
+convert_int_asciiz_to_hex_asciiz:
+jr $ra
+
+
+## Entrada: $a0: tamanho do hex_asciiz_buffer
+##          $a1: valor inteiro a ser convertido para hex (asciiz)
+## Saida: nada, pois o próprio hex_asciiz_buffer é alterado
+convert_int_to_hex_asciiz:
 jr $ra
 
 
@@ -225,6 +275,12 @@ jr $ra
 ## Saida: $v0: tamanho do mif_text_content
 encode_text_asm:
 move $v0, $zero
+jr $ra
+
+
+## Entrada: $a0: valor do register em asciiz
+## Saida: nada, pois o próprio hex_asciiz_buffer é alterado
+convert_register_to_hex_asciiz:
 jr $ra
 
 
