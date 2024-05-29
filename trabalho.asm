@@ -237,15 +237,14 @@ addi $sp, $sp, 4
 jr $ra
 
 
-## Entrada: $a0: endereço do mif_addr_buffer
-##          $a1: endereço do mif_value_buffer
+## Entrada: $a0: endereço do mif_xxxx_content que deseja escrever a linha,
+##          a partir do que há nos mif_addr_buffer e mif_value_buffer
 ## Saida: nada, pois o próprio mif_line_buffer será alterado
-generate_mif_line:
+write_mif_line:
 jr $ra
 
 
-## Entrada: $a0: endereço do label_buffer
-##          $a1: valor em int do endereço da label no mips
+## Entrada: $a0: valor em int do endereço da label no mips
 ## Saida: nada, pois o próprio valor de labels é alterado
 save_label:
 jr $ra
@@ -257,18 +256,98 @@ convert_int_to_label_addr:
 jr $ra
 
 
-## Entrada: #a0: tamanho do hex_asciiz_buffer
-##          $a1: endereço do int_asciiz_buffer
-## Saida: nada, pois o próprio hex_asciiz_buffer é alterado
+## Entrada: $a0: tamanho do hex_asciiz_buffer
+##          $a1: ponteiro para o buffer a ser preenchido com o resultado
+## Saida: nada, pois o próprio buffer passado é alterado
 convert_int_asciiz_to_hex_asciiz:
-jr $ra
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    # inicializacoes
+    move $t1, $zero # indice do int_asciiz_buffer
+    move $t2, $zero  # acumulador do valor decimal
+    move $t7, $zero  # flag de negativo
+    # verifica se o inteiro asciiz é negativo
+    lb $t3, int_asciiz_buffer($t1)
+    beq $t3, '-', is_negative
+    j convert_int_asciiz_to_int
+    # se negativo, seta uma flag para o convert_int_to_hex_asciiz
+    is_negative:
+    li $t7, 1
+    addi $t1, $t1, 1
+    # primeiro converte para inteiro .word
+    convert_int_asciiz_to_int:
+        lb $t3, int_asciiz_buffer($t1)  # pega o char do int asciiz
+        bne $t3, $zero, skip_end_int_asciiz  # se não terminou de converter em word
+        move $a3, $a1
+        move $a1, $t2
+        move $a2, $t7
+        jal convert_int_to_hex_asciiz
+        j end_convert_int_asciiz_to_hex_asciiz
+        skip_end_int_asciiz:
+        sub $t3, $t3, '0'  # converte o byte do char para seus bits em representação numérica
+        mul $t2, $t2, 10  # multiplica o acumulador decimal por 10
+        add $t2, $t2, $t3  # acrescenta o byte convertido ao acumulador do valor decimal
+        addi $t1, $t1, 1  # incremeta para iterar para o proximo char do inteiro asciiz
+        j convert_int_asciiz_to_int
+    # fim da conversao :)
+    end_convert_int_asciiz_to_hex_asciiz:
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
 
 
 ## Entrada: $a0: tamanho do hex_asciiz_buffer
 ##          $a1: valor inteiro a ser convertido para hex (asciiz)
+##          $a2: flag de negativo
+##          $a3: ponteiro para o buffer a ser preenchido com o resultado
 ## Saida: nada, pois o próprio hex_asciiz_buffer é alterado
 convert_int_to_hex_asciiz:
-jr $ra
+    beq $a2, $zero, skip_negate_int  # se o inteiro é negativo, nega os bits dele
+    sub $a1, $zero, $a1
+    # se é positivo, segue normal
+    skip_negate_int:
+    move $t1, $a1  # valor decimal em t1
+    move $t2, $zero  # contador de dígitos para o valor em hexadecimal asciiz
+    # conta os bytes necessarios para a representacao de hexadecimal em asciiz
+    count_digits_hex_asciiz:
+        beq $t1, $zero, calculate_lsb_digit_hex_asciiz
+        srl $t1, $t1, 4
+        addi $t2, $t2, 1
+        j count_digits_hex_asciiz
+    # calcula por onde começa a preencher o hex_asciiz_buffer
+    calculate_lsb_digit_hex_asciiz:
+        sub $t2, $a0, $t2
+        # se foi pedido menos bytes do que o necessário para representação em asciiz
+        blt $t2, $zero, internal_error_bits_conversion
+        add $a0, $a0, $a3
+        add $t2, $t2, $a3
+        move $t0, $a0
+    # comeca a converter cada 4 bits do valor inteiro para o byte correspondente
+    convert_digits_hex_asciiz:
+        beq $t0, $t2, fill_with_zeros
+        addi $t0, $t0, -1
+        andi $t3, $a1, 0xF
+        blt $t3, 10, is_num_hex_asciiz
+        addi $t3, $t3, 87
+        j store_char_in_buffer
+        is_num_hex_asciiz:
+        addi $t3, $t3, 48
+        # aqui preencho o hex_asciiz_buffer com o char convertido
+        store_char_in_buffer:
+            sb $t3, 0($t0)
+            srl $a1, $a1, 4
+            j convert_digits_hex_asciiz
+        # preencho com zeros a esquerda
+    fill_with_zeros:
+        beq $t0, $a3, end_convert_int_to_hex_asciiz
+        addi $t0, $t0, -1
+        li $t3, 48
+        sb $t3, 0($t0)
+        j fill_with_zeros
+    # fim da conversao :)
+    end_convert_int_to_hex_asciiz:
+    sb $zero, 0($a0)
+    jr $ra
 
 
 ## Entrada: $a0: ponteiro para o conteudo a ser montado
@@ -456,6 +535,16 @@ error_syntax:
 
 ## Entrada: nada
 ## Saida: nada
+internal_error_bits_conversion:
+# imprime a mensagem
+li $v0, 4
+la $a0, internal_error_bits_conversion_msg
+syscall
+j end
+
+
+## Entrada: nada
+## Saida: nada
 end:
     li $v0, 10
     syscall
@@ -467,3 +556,4 @@ footer_mif: .asciiz "\n\nEND;\n"
 prompt_input_filepath: .asciiz "Digite o caminho do arquivo .asm (completo): "
 error_open_file_msg: .asciiz "Error: Nao foi possivel ler o arquivo"
 error_syntax_msg: .asciiz "Error: Erro de sintaxe no codigo"
+internal_error_bits_conversion_msg: .asciiz "Erro no montador: bytes insuficientes para escrever o valor hexadecimal em asciiz"
