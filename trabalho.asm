@@ -291,7 +291,7 @@ encode_data_asm:
         addi $s0, $s0, 1
         lb $t0, asm_data_content($s0)
         addi $s0, $s0, 1
-        beq $t0, 'x', hexadecimal_data_value
+        beq $t0, 'x', hex_data_value
         addi $s0, $s0, -1
         j start_decimal_data_value
     start_decimal_data_value:
@@ -339,8 +339,65 @@ encode_data_asm:
         addi $s3, $s3, 1  # atualizou endereço do data do mif
         j identifying_data_value
 
-    hexadecimal_data_value:
-    # -- trata de valores em hexadecimais
+    hex_data_value:
+        move $t1, $s0
+        count_digits_hex_data_value:
+            lb $t0, asm_data_content($t1)
+            beq $t0, $zero, end_count_digits_hex_data_value
+            beq $t0, ' ', end_count_digits_hex_data_value
+            beq $t0, '\n', end_count_digits_hex_data_value
+            blt $t0, 48, error_syntax
+            beq $t0, 'a', valid_digit_hex_data_value
+            beq $t0, 'b', valid_digit_hex_data_value
+            beq $t0, 'c', valid_digit_hex_data_value
+            beq $t0, 'd', valid_digit_hex_data_value
+            beq $t0, 'e', valid_digit_hex_data_value
+            beq $t0, 'f', valid_digit_hex_data_value
+            bgt $t0, 57, error_syntax
+            valid_digit_hex_data_value:
+            addi $t1, $t1, 1
+            j count_digits_hex_data_value
+        end_count_digits_hex_data_value:
+            sub $t1, $t1, $s0
+            li $t2, 8
+            sub $t1, $t2, $t1  # calcula primeiro indice a preencher com hex data value
+            bltz $t1, internal_error_bits_conversion
+            move $t2, $t1  # calcula até onde preencher com zeros a esquerda
+        store_hex_data_value:
+            beq $t1, 8, fill_zeros_hex_mif_value
+            lb $t0, asm_data_content($s0)
+            addi $s0, $s0, 1
+            sb $t0, mif_value_buffer($t1)
+            addi $t1, $t1, 1
+            j store_hex_data_value
+        fill_zeros_hex_mif_value:
+            beq $t2, $zero, end_hex_data_value
+            addi $t2, $t2, -1
+            li $t0, 48
+            sb $t0, mif_value_buffer($t2)
+            j fill_zeros_hex_mif_value
+        end_hex_data_value:
+            li $t1, 8
+            sb $zero, mif_value_buffer($t1)  # finalizei de preencher o mif_value_buffer
+            # -- pega o endereço do data do mif e converte para hexa asciiz
+            li $a0, 8
+            move $a1, $s3
+            move $a2, $zero
+            la $a3, mif_addr_buffer
+            jal convert_int_to_hex_asciiz  # preenchi o mif_addr_buffer
+             # -- escreve uma linha no mif_data_content
+            la $a0, mif_data_content
+            move $a1, $s1
+            jal generate_mif_line
+            # -- zera buffers
+            sb $zero, mif_value_buffer($zero)
+            sb $zero, mif_addr_buffer($zero) 
+            # -- atualiza indices dos mif_data_content e asm_data_content
+            addi $s0, $s0, 1
+            move $s1, $v0
+            addi $s2, $s2, 4  # atualizou endereço do data do asm
+            addi $s3, $s3, 1  # atualizou endereço do data do mif
+            j identifying_data_value
 
     end_encode_data_asm:
     lw $ra, 0($sp)
