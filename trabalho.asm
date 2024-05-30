@@ -264,6 +264,10 @@ encode_data_asm:
     identifying_data_type:
         lb $t0, asm_data_content($s0)
         addi $s0, $s0, 1
+        bne $t0, '\n', skip_check_nl_after_label
+        lb $t0, asm_data_content($s0)
+        addi $s0, $s0, 1
+        skip_check_nl_after_label:
         bne $t0, '.', error_data_type
         lb $t0, asm_data_content($s0)
         addi $s0, $s0, 1

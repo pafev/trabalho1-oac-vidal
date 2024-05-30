@@ -16,5 +16,6 @@ la $s0, dados
 
 lw $t3, 8($t0)
 .data
-    dados3: .word 32
+    dados3:
+    .word 32
 ,4322, 0x0313
