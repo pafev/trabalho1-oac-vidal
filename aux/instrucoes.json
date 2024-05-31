@@ -1,0 +1,87 @@
+{
+  "Register": {
+    "encode": "oooooo sssss ttttt ddddd aaaaa ffffff",
+    "ArithLog": {
+      "add $d $s $t": "000000 sssss ttttt ddddd 00000 100000",
+      "sub $d $s $t": "000000 sssss ttttt ddddd 00000 100010",
+      "and $d $s $t": "000000 sssss ttttt ddddd 00000 100100",
+      "or $d $s $t": "000000 sssss ttttt ddddd 00000 100101",
+      "nor $d $s $t": "000000 sssss ttttt ddddd 00000 100111",
+      "xor $d $s $t": "000000 sssss ttttt ddddd 00000 100110",
+      "slt $d $s $t": "000000 sssss ttttt ddddd 00000 101010",
+      "addu $d $s $t": "000000 sssss ttttt ddddd 00000 100001",
+      "subu $d $s $t": "000000 sssss ttttt ddddd 00000 100011",
+      "movn $d $s $t": "000000 sssss ttttt ddddd 00000 001011",
+      "sltu $d $s $t": "000000 sssss ttttt ddddd 00000 101011"
+    },
+    "DivMult": {
+      "mult $s $t": "000000 sssss ttttt 00000 00000 011000",
+      "div $s $t": "000000 sssss ttttt 00000 00000 011010"
+    },
+    "MoveFrom": {
+      "mfhi $d": "000000 00000 00000 ddddd 00000 010000",
+      "mflo $d": "000000 00000 00000 ddddd 00000 010010"
+    },
+    "JumpR": {
+      "jr $s": "000000 sssss 00000 00000 00000 001000"
+    },
+    "JumpAlR": {
+      "jalr $s": "000000 sssss 00000 11111 00000 001001"
+    },
+    "Shift": {
+      "sll $d $t a": "000000 00000 ttttt ddddd aaaaa 000000",
+      "srl $d $t a": "000000 00000 ttttt ddddd aaaaa 000010",
+      "sra $d $t a": "000000 00000 ttttt ddddd aaaaa 000011"
+    },
+    "ShiftV": {
+      "sllv $d $t $s": "000000 sssss ttttt ddddd 00000 000100",
+      "srav $d $t $s": "000000 sssss ttttt ddddd 00000 000111"
+    },
+    "Mul": {
+      "mul $d $s $t": "011100 sssss ttttt ddddd 00000 000010"
+    },
+    "Clo": {
+      "clo $d $s": "011100 sssss 00000 ddddd 00000 100001",
+      "clz $d $s": "011100 sssss 00000 ddddd 00000 100000"
+    }
+  },
+
+  "Immediate": {
+    "encode": "oooooo sssss ttttt iiiiiiii iiiiiiii",
+    "ArithLogI": {
+      "addi $t $s i": "001000 sssss ttttt iiiiiiii iiiiiiii",
+      "andi $t $s i": "001100 sssss ttttt iiiiiiii iiiiiiii",
+      "ori $t $s i": "001101 sssss ttttt iiiiiiii iiiiiiii",
+      "xori $t $s i": "001110 sssss ttttt iiiiiiii iiiiiiii",
+      "addiu $t $s i": "001001 sssss ttttt iiiiiiii iiiiiiii",
+      "slti $t $s $i": "001010 sssss ttttt iiiiiiii iiiiiiii"
+    },
+    "BranchZ": {
+      "bgez $s label": "000001 sssss 00001 iiiiiiii iiiiiiii",
+      "bgezal $s label": "000001 sssss 10001 iiiiiiii iiiiiiii",
+      "bltzal $s label": "000001 sssss 10000 iiiiiiii iiiiiiii"
+    },
+    "LoadStore": {
+      "lw $t i($s)": "100011 sssss ttttt iiiiiiii iiiiiiii",
+      "sw $t i($s)": "101011 sssss ttttt iiiiiiii iiiiiiii",
+      "lb $t i($s)": "100000 sssss ttttt iiiiiiii iiiiiiii",
+      "sb $t i($s)": "101000 sssss ttttt iiiiiiii iiiiiiii",
+      "lhu $t i($s)": "100101 sssss ttttt iiiiiiii iiiiiiii"
+    },
+    "Branch": {
+      "beq $s $t label": "000100 sssss ttttt iiiiiiii iiiiiiii",
+      "bne $s $t label": "000101 sssss ttttt iiiiiiii iiiiiiii"
+    },
+    "LoadI": {
+      "lui $t 0xXXXX": "001111 00000 ttttt iiiiiiii iiiiiiii"
+    }
+  },
+
+  "Jump": {
+    "encode": "oooooo ii iiiiiiii iiiiiiii iiiiiiii",
+    "Jump": {
+      "j label": "000010 ii iiiiiiii iiiiiiii iiiiiiii",
+      "jal label": "000011 ii iiiiiiii iiiiiiii iiiiiiii"
+    }
+  }
+}
