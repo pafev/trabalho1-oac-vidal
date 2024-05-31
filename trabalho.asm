@@ -88,7 +88,6 @@ get_input_file:
     addi $sp, $sp, 4
     # retorno
     jr $ra
-
     ## Entrada: $a0: ponteiro para a string com newline
     ## Saida: nada, pq a manipulacao já é na string com newline
     remove_newline:
@@ -342,7 +341,6 @@ encode_data_asm:
         addi $s2, $s2, 4  # atualizou endereço do data do asm
         addi $s3, $s3, 1  # atualizou endereço do data do mif
         j identifying_data_value
-
     hex_data_value:
         move $t1, $s0
         count_digits_hex_data_value:
@@ -402,7 +400,6 @@ encode_data_asm:
             addi $s2, $s2, 4  # atualizou endereço do data do asm
             addi $s3, $s3, 1  # atualizou endereço do data do mif
             j identifying_data_value
-
     end_encode_data_asm:
     lw $ra, 0($sp)
     addi $sp, $sp, 4

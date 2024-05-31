@@ -10,7 +10,7 @@ dados2: .word 4,
 
 li    $t0, 0x10010000
 lw   $t1, 0( $t0  )
-    lw $t2, 4($t0)
+label:    lw $t2, 4($t0)
 la $s0, dados
 
 
