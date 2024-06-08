@@ -7,14 +7,9 @@ dados2: .word 4,
  5, 6
 
 .text
-
-li    $t0, 0x10010000
-lw   $t1, 0( $t0  )
-label:    lw $t2, 4($t0)
-la $s0, dados
-
-
-lw $t3, 8($t0)
+add $t2, $t2, $s0
+or $s0, $s0, $t4
+sltu $v0, $zero, $a1
 .data
     dados3:
     .word 32

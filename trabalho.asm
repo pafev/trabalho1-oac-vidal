@@ -10,9 +10,12 @@ label_buffer: .space 20
 mif_addr_buffer: .space 9  # formato: "00000000"
 mif_value_buffer: .space 9  # formato: "00000000"
 mif_line_buffer: .space 22  # formato: "00000000 : 00000000;"
-labels: .space 128  # formato "label:0000;label2:0008;"
+data_labels: .space 128  # formato "label:${addr};label2:${addr + 4x};"
+text_labels: .space 128  # formato "label:${addr}:label2:${addr + 4x};"
 int_asciiz_buffer: .space 11
 hex_asciiz_buffer: .space 9
+register_buffer: .space 5
+instruction_buffer: .space 5
 
 .text
 .globl main
@@ -33,11 +36,11 @@ main:
     move $a0, $v0  # tamanho do mif_data_content
     jal generate_data_mif
 
-    # la $a0, asm_text_content  # ponteiro do .text do arquivo .asm
-    # jal encode_text_asm
+    la $a0, asm_text_content  # ponteiro do .text do arquivo .asm
+    jal encode_text_asm
 
-    # move $a0, $v0  # tamanho do mif_text_content
-    # jal generate_text_mif
+    move $a0, $v0  # tamanho do mif_text_content
+    jal generate_text_mif
 
     jal end
 
@@ -130,7 +133,6 @@ format_content:
         beq $t2, ':', loop_format_line
         beq $t2, ')', loop_format_line
         beq $t2, '.', loop_format_line
-        beq $t2, '$', loop_format_line
         lb $t2, -2($t0)  # guarda char anterior (char atual - 1) em t2
         beq $t2, ':', loop_format_line  # se o char anterior é um desses char's, ignora char atual
         beq $t2, '(', loop_format_line
@@ -258,7 +260,7 @@ encode_data_asm:
     save_label_for_asm:
         sb $zero, label_buffer($t1)
         move $a0, $s2  # valor do endereço asm
-        jal save_label
+        jal save_data_label
         sb $zero, label_buffer($zero)
     identifying_data_type:
         lb $t0, asm_data_content($s0)
@@ -409,7 +411,7 @@ encode_data_asm:
 
 ## Entrada: $a0: endereço do mif_xxxx_content que deseja escrever a linha,
 ##          a partir do que há nos mif_addr_buffer e mif_value_buffer
-##          $a1: tamanho do mif_xxxx_content
+##          $a1: indice em que se deseja comecar a escrever a nova linha
 ## Saida: nada, pois o próprio mif_xxxx_content será alterado
 generate_mif_line:
     addi $sp, $sp, -4
@@ -454,10 +456,10 @@ generate_mif_line:
     jr $ra
 
 
-## Entrada: $a0: valor em word do endereço da label no .asm
+## Entrada: $a0: valor em word do endereço da label no .asm (multiplo de 4)
 ##          utiliza o nome da label em label_buffer
-## Saida: nada, pois o próprio valor de labels é alterado
-save_label:
+## Saida: nada, pois o próprio valor de data_labels é alterado
+save_data_label:
     addi $sp, $sp, -4
     sw $ra, 0($sp)
     move $a1, $a0  # valor do endereço em word
@@ -466,37 +468,37 @@ save_label:
     la $a3, hex_asciiz_buffer  # irá receber o valor do endereço em asciiz, representando hexadecimal
     jal convert_int_to_hex_asciiz
     move $t2, $zero
-    search_end_labels:
-        lb $t0, labels($t2)
-        beq $t0, $zero, append_labels
+    search_end_data_labels:
+        lb $t0, data_labels($t2)
+        beq $t0, $zero, append_data_labels
         addi $t2, $t2, 1
-        j search_end_labels
-    append_labels:
+        j search_end_data_labels
+    append_data_labels:
     move $t1, $zero
-    append_label_in_labels:
+    append_label_in_data_labels:
         lb $t0, label_buffer($t1)
-        beq $t0, $zero, append_separator_in_labels
+        beq $t0, $zero, append_separator_in_data_labels
         addi $t1, $t1, 1
-        sb $t0, labels($t2)
+        sb $t0, data_labels($t2)
         addi $t2, $t2, 1
-        j append_label_in_labels
-    append_separator_in_labels:
+        j append_label_in_data_labels
+    append_separator_in_data_labels:
         li $t0, 58
-        sb $t0, labels($t2)
+        sb $t0, data_labels($t2)
         addi $t2, $t2, 1
     move $t1, $zero
-    append_addr_in_labels:
+    append_addr_in_data_labels:
         lb $t0, hex_asciiz_buffer($t1)
-        beq $t0, $zero, end_save_label
+        beq $t0, $zero, end_save_data_label
         addi $t1, $t1, 1
-        sb $t0, labels($t2)
+        sb $t0, data_labels($t2)
         addi $t2, $t2, 1
-        j append_addr_in_labels    
-    end_save_label:
+        j append_addr_in_data_labels    
+    end_save_data_label:
         li $t0, 59
-        sb $t0, labels($t2)
+        sb $t0, data_labels($t2)
         addi $t2, $t2, 1
-        sb $zero, labels($t2)
+        sb $zero, data_labels($t2)
     lw $ra, 0($sp)
     addi $sp, $sp, 4
     jr $ra
@@ -596,17 +598,551 @@ convert_int_to_hex_asciiz:
     jr $ra
 
 
-## Entrada: $a0: ponteiro para o conteudo a ser montado
+## Entrada: Nada
 ## Saida: $v0: tamanho do mif_text_content
 encode_text_asm:
-    move $v0, $zero
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+
+    jal extract_text_labels
+
+    move $s0, $zero  # indice do asm_text_content
+    move $s1, $zero  # endereco do mif
+    move $s2, $zero  # valor do mif
+    move $s3, $zero  # indice do mif_text_content
+
+    start_search_for_text_instruction:
+        li $t7, 1  # flag de comeco de linha
+        move $t1, $zero  # indice do instruction_buffer
+        sb $zero, instruction_buffer($zero)  # zerando buffer da instrucao
+    search_for_text_instruction:
+        lb $t0, asm_text_content($s0)
+        addi $s0, $s0, 1
+        beq $t7, $zero, skip_check_first_char_text_instruction
+        beq $t0, $zero, end_encode_text_asm
+        beq $t0, '\n', start_search_for_text_instruction
+        skip_check_first_char_text_instruction:
+        move $t7, $zero
+        beq $t0, $zero, error_syntax
+        beq $t0, '\n', error_syntax
+        beq $t0, ' ', process_text_instruction
+        sb $t0, instruction_buffer($t1)
+        addi $t1, $t1, 1
+        j search_for_text_instruction
+
+    process_text_instruction:
+        sb $zero, instruction_buffer($t1)
+        la $a0, instructions_arith_log
+        jal belongs_to_instruction_set
+        beq $v0, 1, encode_arith_log_instruction
+        j error_unknown_opcode
+
+    encode_arith_log_instruction:
+        move $s2, $zero  # zerando valor do mif        
+        beq $v1, 4, get_add_function
+        beq $v1, 8, get_sub_function
+        beq $v1, 12, get_and_function
+        beq $v1, 15, get_or_function
+        beq $v1, 19, get_nor_function
+        beq $v1, 23, get_xor_function
+        beq $v1, 27, get_slt_function
+        beq $v1, 32, get_addu_function
+        beq $v1, 37, get_subu_function
+        beq $v1, 42, get_movn_function
+        beq $v1, 47, get_sltu_function
+
+        get_add_function:
+            addiu $s2, $s2, 32
+            j start_get_d_register_arithlog
+        get_sub_function:
+            addiu $s2, $s2, 34
+            j start_get_d_register_arithlog
+        get_and_function:
+            addiu $s2, $s2, 36
+            j start_get_d_register_arithlog
+        get_or_function:
+            addiu $s2, $s2, 37
+            j start_get_d_register_arithlog
+        get_nor_function:
+            addiu $s2, $s2, 39
+            j start_get_d_register_arithlog
+        get_xor_function:
+            addiu $s2, $s2, 38
+            j start_get_d_register_arithlog
+        get_slt_function:
+            addiu $s2, $s2, 42
+            j start_get_d_register_arithlog
+        get_addu_function:
+            addiu $s2, $s2, 33
+            j start_get_d_register_arithlog
+        get_subu_function:
+            addiu $s2, $s2, 35
+            j start_get_d_register_arithlog
+        get_movn_function:
+            addiu $s2, $s2, 11
+            j start_get_d_register_arithlog
+        get_sltu_function:
+            addiu $s2, $s2, 43
+
+        start_get_d_register_arithlog:
+        lb $t0, asm_text_content($s0)
+        addi $s0, $s0, 1
+        bne $t0, '$', error_unknown_instruction
+        move $t1, $zero  # indice do register_buffer
+        sb $zero, register_buffer($zero)  # zerando register_buffer
+        get_d_register_arithlog:
+            lb $t0, asm_text_content($s0)
+            addi $s0, $s0, 1
+            bne $t0, ' ', skip_save_d_register_arithlog
+            sb $zero, register_buffer($t1)
+            jal get_register_word
+            sll $v0, $v0, 11
+            addu $s2, $s2, $v0
+            j start_get_s_register_arithlog
+            skip_save_d_register_arithlog:
+            sb $t0, register_buffer($t1)
+            addi $t1, $t1, 1
+            j get_d_register_arithlog
+
+        start_get_s_register_arithlog:
+        lb $t0, asm_text_content($s0)
+        addi $s0, $s0, 1
+        bne $t0, '$', error_unknown_instruction
+        move $t1, $zero  # indice do register_buffer
+        sb $zero, register_buffer($zero)  # zerando register_buffer
+        get_s_register_arithlog:
+            lb $t0, asm_text_content($s0)
+            addi $s0, $s0, 1
+            bne $t0, ' ', skip_save_s_register_arithlog
+            sb $zero, register_buffer($t1)
+            jal get_register_word
+            sll $v0, $v0, 21
+            addu $s2, $s2, $v0
+            j start_get_t_register_arithlog
+            skip_save_s_register_arithlog:
+            sb $t0, register_buffer($t1)
+            addi $t1, $t1, 1
+            j get_s_register_arithlog
+
+        start_get_t_register_arithlog:
+        lb $t0, asm_text_content($s0)
+        addi $s0, $s0, 1
+        bne $t0, '$', error_unknown_instruction
+        move $t1, $zero  # indice do register_buffer
+        sb $zero, register_buffer($zero)  # zerando register_buffer
+        get_t_register_arithlog:
+            lb $t0, asm_text_content($s0)
+            beq $t0, $zero, save_t_register_arithlog
+            beq $t0, '\n', save_t_register_arithlog
+            beq $t0, ' ', save_t_register_arithlog
+            addi $s0, $s0, 1
+            sb $t0, register_buffer($t1)
+            addi $t1, $t1, 1
+            j get_t_register_arithlog
+        save_t_register_arithlog:
+            sb $zero, register_buffer($t1)
+            jal get_register_word
+            sll $v0, $v0, 16
+            addu $s2, $s2, $v0
+            j end_encode_instruction
+        
+        end_encode_instruction:
+            li $a0, 8
+            move $a1, $s1
+            move $a2, $zero
+            la $a3, mif_addr_buffer
+            jal convert_int_to_hex_asciiz
+            li $a0, 8
+            move $a1, $s2
+            move $a2, $zero
+            la $a3, mif_value_buffer
+            jal convert_int_to_hex_asciiz
+            la $a0, mif_text_content
+            move $a1, $s3
+            jal generate_mif_line
+            addi $s3, $s3, 21
+            lb $t0, asm_text_content($s0)
+            addi $s0, $s0, 1
+            beq $t0, $zero, end_encode_text_asm
+            bne $t0, '\n', error_syntax
+            addi $s1, $s1, 1
+            j start_search_for_text_instruction
+
+    end_encode_text_asm:
+    move $v0, $s3
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
     jr $ra
 
 
-## Entrada: $a0: valor do register em asciiz
-## Saida: nada, pois o próprio hex_asciiz_buffer é alterado
-convert_register_to_hex_asciiz:
+## Entrada: nada, pois o próprio asm_text_content é examinado
+## Saida:   nada, pois os próprios asm_text_content e text_labels são alterados
+extract_text_labels:
+    addi $sp, $sp, -20
+    sw $s3, 16($sp)
+    sw $s2, 12($sp)
+    sw $s1, 8($sp)
+    sw $s0, 4($sp)
+    sw $ra, 0($sp)
+    move $s0, $zero  # indice do asm_text_content antigo
+    li $s1, 0x400000  # endereco da linha
+    move $s2, $zero  # indice do asm_text_content novo
+    examines_text_label_in_line:
+        move $s3, $s0
+        move $t2, $zero
+        sb $zero, label_buffer($zero)
+        examines_text_label_in_line_loop:
+            lb $t0, asm_text_content($s3)
+            addi $s3, $s3, 1
+            beq $t0, $zero, update_text_line_without_label
+            beq $t0, '\n', update_text_line_without_label
+            beq $t0, ':', save_text_label_for_asm
+            sb $t0, label_buffer($t2)
+            addi $t2, $t2, 1
+            j examines_text_label_in_line_loop
+    update_text_line_without_label:
+        lb $t0, asm_text_content($s0)
+        addi $s0, $s0, 1
+        sb $t0, asm_text_content($s2)
+        addi $s2, $s2, 1
+        beq $t0, $zero, end_examines_text_label_in_line
+        bne $t0, '\n', update_text_line_without_label
+        addi $s1, $s1, 4
+        j examines_text_label_in_line
+    save_text_label_for_asm:
+        sb $zero, label_buffer($t2)
+        move $a0, $s1
+        jal save_text_label
+        lb $t0, asm_text_content($s3)
+        bne $t0, '\n', skip_check_end_line
+        addi $s0, $s3, 1
+        j examines_text_label_in_line
+        skip_check_end_line:
+        move $s0, $s3
+        j update_text_line_without_label
+    end_examines_text_label_in_line:
+    lw $ra, 0($sp)
+    lw $s0, 4($sp)
+    lw $s1, 8($sp)
+    lw $s2, 12($sp)
+    lw $s3, 16($sp)
+    addi $sp, $sp, 20
     jr $ra
+
+
+## Entrada: $a0: valor em word endereco da text label no .asm (0x004XXXXX e multiplo de 4)
+##          Utiliza o nome da label em label_buffer
+## Saida: Nada, pois o próprio text_labels eh alterado
+save_text_label:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    move $t1, $zero  # indice de onde comecar a acrescentar a nova label em text_label
+    search_end_text_labels:  # procura final do text_labels, para entao fazer o append
+        lb $t0, text_labels($t1)
+        beq $t0, $zero, append_text_labels
+        addi $t1, $t1, 1
+        j search_end_text_labels
+    append_text_labels:
+    move $t2, $zero
+    append_label_in_text_labels:
+        lb $t0, label_buffer($t2)
+        beq $t0, $zero, append_separator_in_text_labels
+        addi $t2, $t2, 1
+        sb $t0, text_labels($t1)
+        addi $t1, $t1, 1
+        j append_label_in_text_labels
+    append_separator_in_text_labels:
+        li $t0, 58
+        sb $t0, text_labels($t1)
+        addi $t1, $t1, 1
+    append_addr_in_text_labels:
+        sb $a0, text_labels($t1)
+        addi $t1, $t1, 1
+        srl $a0, $a0, 8
+        sb $a0, text_labels($t1)
+        addi $t1, $t1, 1
+        srl $a0, $a0, 8
+        sb $a0, text_labels($t1)
+        addi $t1, $t1, 1
+        srl $a0, $a0 8
+        sb $a0, text_labels($t1)
+        addi $t1, $t1, 1
+    li $t0, 59
+    sb $t0, text_labels($t1)
+    addi $t1, $t1, 1
+    sb $zero, text_labels($t1)
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+
+## Entrada: nada, pois a string do registrador estara em register_buffer
+## Saida: $v0: os 5 bits que representam a string passada como registrador
+get_register_word:
+    la $t1, register_buffer
+    lb $t0, 0($t1)
+        blt $t0, 48, skip_check_register_number
+        bgt $t0, 57, skip_check_register_number
+        sub $t0, $t0, '0'
+        add $t2, $zero, $t0
+        lb $t0, 1($t1)
+        bne $t0, $zero, skip_end_register_number
+        move $v0, $t2
+        j end_get_register_word
+    skip_end_register_number:
+        blt $t0, 48, error_register_syntax
+        bgt $t0, 57, error_register_syntax
+        sub $t0, $t0, '0'
+        mul $t2, $t2, 10
+        add $t2, $t2, $t0
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        blt $t2, $zero, error_register_syntax
+        bgt $t2, 31, error_register_syntax
+        move $v0, $t2
+        j end_get_register_word
+    skip_check_register_number:
+        bne $t0, 'z', skip_check_register_zero
+        lb $t0, 1($t1)
+        bne $t0, 'e', error_register_syntax
+        lb $t0, 2($t1)
+        bne $t0, 'r', error_register_syntax
+        lb $t0, 3($t1)
+        bne $t0, 'o', error_register_syntax
+        lb $t0, 4($t1)
+        bne $t0, $zero, error_register_syntax
+        move $v0, $zero
+        j end_get_register_word
+    skip_check_register_zero:
+        bne $t0, 'v', skip_check_register_v
+        lb $t0, 1($t1)
+        bne $t0, '0', skip_check_register_v0
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 2
+        j end_get_register_word
+    skip_check_register_v0:
+        bne $t0, '1', error_register_syntax
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 3
+        j end_get_register_word
+    skip_check_register_v:
+        bne $t0, 'a', skip_check_register_a
+        lb $t0, 1($t1)
+        bne $t0, 't', skip_check_register_at
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 1
+        j end_get_register_word
+    skip_check_register_at:
+        bne $t0, '0', skip_check_register_a0
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 4
+        j end_get_register_word
+    skip_check_register_a0:
+        bne $t0, '1', skip_check_register_a1
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 5
+        j end_get_register_word
+    skip_check_register_a1:
+        bne $t0, '2', skip_check_register_a2
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 6
+        j end_get_register_word
+    skip_check_register_a2:
+        bne $t0, '3', error_register_syntax
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 7
+        j end_get_register_word
+    skip_check_register_a:
+        bne $t0, 't', skip_check_register_t
+        lb $t0, 1($t1)
+        bne $t0, '0', skip_check_register_t0
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 8
+        j end_get_register_word
+    skip_check_register_t0:
+        bne $t0, '1', skip_check_register_t1
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 9
+        j end_get_register_word
+    skip_check_register_t1:
+        bne $t0, '2', skip_check_register_t2
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 10
+        j end_get_register_word
+    skip_check_register_t2:
+        bne $t0, '3', skip_check_register_t3
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 11
+        j end_get_register_word
+    skip_check_register_t3:
+        bne $t0, '4', skip_check_register_t4
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 12
+        j end_get_register_word
+    skip_check_register_t4:
+        bne $t0, '5', skip_check_register_t5
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 13
+        j end_get_register_word
+    skip_check_register_t5:
+        bne $t0, '6', skip_check_register_t6
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 14
+        j end_get_register_word
+    skip_check_register_t6:
+        bne $t0, '7', skip_check_register_t7
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 15
+        j end_get_register_word
+    skip_check_register_t7:
+        bne $t0, '8', skip_check_register_t8
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 24
+        j end_get_register_word
+    skip_check_register_t8:
+        bne $t0, '9', error_register_syntax
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 25
+        j end_get_register_word
+    skip_check_register_t:
+        bne $t0, 's', skip_check_register_s
+        lb $t0, 1($t1)
+        bne $t0, '0', skip_check_register_s0
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 16
+        j end_get_register_word
+    skip_check_register_s0:
+        bne $t0, '1', skip_check_register_s1
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 17
+        j end_get_register_word
+    skip_check_register_s1:
+        bne $t0, '2', skip_check_register_s2
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 18
+        j end_get_register_word
+    skip_check_register_s2:
+        bne $t0, '3', skip_check_register_s3
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 19
+        j end_get_register_word
+    skip_check_register_s3:
+        bne $t0, '4', skip_check_register_s4
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 20
+        j end_get_register_word
+    skip_check_register_s4:
+        bne $t0, '5', skip_check_register_s5
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 21
+        j end_get_register_word
+    skip_check_register_s5:
+        bne $t0, '6', skip_check_register_s6
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 22
+        j end_get_register_word
+    skip_check_register_s6:
+        bne $t0, '7', skip_check_register_s7
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 23
+        j end_get_register_word
+    skip_check_register_s7:
+        bne $t0, 'p', error_register_syntax
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 29
+        j end_get_register_word
+    skip_check_register_s:
+        bne $t0, 'k', skip_check_register_k
+        lb $t0, 1($t1)
+        bne $t0, '0', skip_check_register_k0
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 26
+        j end_get_register_word
+    skip_check_register_k0:
+        bne $t0, '1', error_register_syntax
+        lb $t0, 2($t1)
+        bne $t0, $zero, error_register_syntax
+        li $v0, 27
+        j end_get_register_word
+    skip_check_register_k:
+        bne $t0, 'g', skip_check_register_gp
+        lb $t0, 1($t1)
+        bne $t0, 'p', error_register_syntax
+        li $v0, 28
+        j end_get_register_word
+    skip_check_register_gp:
+        bne $t0, 'f', skip_check_register_fp
+        lb $t0, 1($t1)
+        bne $t0, 'p', error_register_syntax
+        li $v0, 30
+        j end_get_register_word
+    skip_check_register_fp:
+        bne $t0, 'r', error_register_syntax
+        lb $t0, 1($t1)
+        bne $t0, 'a', error_register_syntax
+        li $v0, 31
+        j end_get_register_word
+    end_get_register_word:
+    jr $ra
+
+
+## Entrada: $a0: conjunto de instrucoes em que ira checar o pertencimento do que esta em instruction_buffer
+## Saida: $v0: flag de pertencimento (se 1, pertence a esse conjunto de instrucoes. Se 0, nao pertence)
+##        $v1: posicao do ';' apos a instrucao igual a passada, caso pertenca ao grupo
+belongs_to_instruction_set:
+    move $t2, $a0  # indice do conjunto de instrucoes
+    move $t7, $zero  # flag de pertencimento ao conjunto
+    start_checks_equality_instructions:
+        move $t3, $zero  # indice do instruction_buffer
+        checks_equality_instructions:
+            lb $t0, 0($t2)
+            addi $t2, $t2, 1
+            lb $t1, instruction_buffer($t3)
+            addi $t3, $t3, 1
+            beq $t0, $zero, end_belongs_to_instruction_set
+            bne $t0, ';', skip_end_checks_equality_instructions
+            bne $t1, $zero, start_checks_equality_instructions
+            li $t7, 1
+            j end_belongs_to_instruction_set
+            skip_end_checks_equality_instructions:
+            beq $t0,, $t1, checks_equality_instructions
+            j skip_instruction_in_instruction_set
+    skip_instruction_in_instruction_set:
+        lb $t0, 0($t2)
+        addi $t2, $t2, 1
+        beq $t0, ';', start_checks_equality_instructions
+        j skip_instruction_in_instruction_set
+    end_belongs_to_instruction_set:
+        move $v0, $t7
+        sub $v1, $t2, $a0
+        jr $ra
 
 
 ## Entrada: $a0: tamanho do mif_data_content
@@ -710,7 +1246,7 @@ generate_text_mif:
     syscall
     li $v0, 15
     la $a1, footer_mif
-    li $a2, 7
+    li $a2, 6
     syscall
     # fechando arquivo
     li $v0, 16
@@ -793,6 +1329,36 @@ error_data_type:
 
 ## Entrada: nada
 ## Saida: nada
+error_register_syntax:
+    # imprime a mensagem
+    li $v0, 4
+    la $a0, error_register_syntax_msg
+    syscall
+    j end
+
+
+## Entrada: nada
+## Saida: nada
+error_unknown_opcode:
+    # imprime a mensagem
+    li $v0, 4
+    la $a0, error_unknown_opcode_msg
+    syscall
+    j end
+
+
+## Entrada: nada
+## Saida: nada
+error_unknown_instruction:
+    # imprime a mensagem
+    li $v0, 4
+    la $a0, error_unknown_instruction_msg
+    syscall
+    j end
+
+
+## Entrada: nada
+## Saida: nada
 internal_error_bits_conversion:
     # imprime a mensagem
     li $v0, 4
@@ -816,3 +1382,22 @@ error_open_file_msg: .asciiz "Error: nao foi possivel ler o arquivo"
 error_syntax_msg: .asciiz "Error: erro de sintaxe no codigo"
 internal_error_bits_conversion_msg: .asciiz "Error: bytes insuficientes para escrever o valor hexadecimal em asciiz"
 error_data_type_msg: .asciiz "Error: tipo de dado não reconhecido"
+error_register_syntax_msg: .asciiz "Error: nao foi possivel compreender o registrador passado"
+error_unknown_opcode_msg: .asciiz "Error: opcode desconhecido"
+error_unknown_instruction_msg: .asciiz "Error: instrucao desconhecida"
+
+instructions_arith_log: .asciiz "add;sub;and;or;nor;xor;slt;addu;subu;movn;sltu;"
+instructions_div_mult: .asciiz "div;mult;"
+instructions_move_from: .asciiz "mfhi;mflo;"
+instructions_jump_r: .asciiz "jr;"
+instructions_jump_alr: .asciiz "jalr;"
+instructions_shift: .asciiz "sll;srl;sra;"
+instructions_shift_v: .asciiz "sllv;srav;"
+instructions_mul: .asciiz "mul;"
+instructions_cl: .asciiz "clo;clz;"
+instructions_arith_log_i: .asciiz "addi;andi;ori;xori;addiu;slti;"
+instructions_branch_z: .asciiz "bgez;bgezal;bltzal;"
+instructions_load_store: .asciiz "lw;sw;lb;sb;lhu;"
+instructions_branch: .asciiz "beq;bne;"
+instructions_load_i: .asciiz "lui;"
+instructions_jump: "j;jal;"

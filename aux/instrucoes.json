@@ -40,7 +40,7 @@
     "Mul": {
       "mul $d $s $t": "011100 sssss ttttt ddddd 00000 000010"
     },
-    "Clo": {
+    "Cl": {
       "clo $d $s": "011100 sssss 00000 ddddd 00000 100001",
       "clz $d $s": "011100 sssss 00000 ddddd 00000 100000"
     }
