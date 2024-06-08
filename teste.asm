@@ -19,6 +19,8 @@ srav $s3, $a1, $a2
 mul $t1, $t3, $t7
 clo $v0, $v1
 clz $a1, $a2
+sll $t1, $t1, 2
+srl $t5, $a3, 31
 .data
     dados3:
     .word 32

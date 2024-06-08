@@ -1125,6 +1125,69 @@ encode_jump_alr_instruction:
 
 
 encode_shift_instruction:
+    beq $v1, 4, start_get_d_register_shift
+    beq $v1, 8, get_srl_function
+    beq $v1, 12, get_sra_function
+    get_srl_function:
+        addiu $s2, $s2, 2
+        j start_get_d_register_shift
+    get_sra_function:
+        addiu $s2, $s2, 3
+    start_get_d_register_shift:
+    lb $t0, asm_text_content($s0)
+    addi $s0, $s0, 1
+    bne $t0, '$', error_unknown_instruction
+    move $t1, $zero
+    sb $zero, register_buffer($zero)
+    get_d_register_shift:
+        lb $t0, asm_text_content($s0)
+        addi $s0, $s0, 1
+        beq $t0, ' ', save_d_register_shift
+        sb $t0, register_buffer($t1)
+        addi $t1, $t1, 1
+        j get_d_register_shift
+    save_d_register_shift:
+        sb $zero, register_buffer($t1)
+        jal get_register_word
+        sll $v0, $v0, 11
+        addu $s2, $s2, $v0
+    start_get_t_register_shift:
+    lb $t0, asm_text_content($s0)
+    addi $s0, $s0, 1
+    bne $t0, '$', error_unknown_instruction
+    move $t1, $zero  # indice do register_buffer
+    sb $zero, register_buffer($zero)  # zerando register_buffer
+    get_t_register_shift:
+        lb $t0, asm_text_content($s0)
+        addi $s0, $s0, 1
+        beq $t0, ' ', save_t_register_shift
+        sb $t0, register_buffer($t1)
+        addi $t1, $t1, 1
+        j get_t_register_shift
+    save_t_register_shift:
+        sb $zero, register_buffer($t1)
+        jal get_register_word
+        sll $v0, $v0, 16
+        addu $s2, $s2, $v0
+    start_get_a_shift:
+    move $t1, $zero  # indice do dec_asciiz_buffer
+    sb $zero, dec_asciiz_buffer($zero)
+    get_a_shift:
+        lb $t0, asm_text_content($s0)
+        beq $t0, $zero, save_a_shift
+        beq $t0, '\n', save_a_shift
+        beq $t0, ' ', save_a_shift
+        addi $s0, $s0, 1
+        sb $t0, dec_asciiz_buffer($t1)
+        addi $t1, $t1, 1
+        j get_a_shift
+    save_a_shift:
+        sb $zero, dec_asciiz_buffer($t1)
+        jal convert_dec_asciiz_to_word
+        bgt $v0, 31, error_syntax
+        sll $v0, $v0, 6
+        addu $s2, $s2, $v0
+        j end_encode_instruction
 
 
 encode_shift_v_instruction:
