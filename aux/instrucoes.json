@@ -12,7 +12,8 @@
       "addu $d $s $t": "000000 sssss ttttt ddddd 00000 100001",
       "subu $d $s $t": "000000 sssss ttttt ddddd 00000 100011",
       "movn $d $s $t": "000000 sssss ttttt ddddd 00000 001011",
-      "sltu $d $s $t": "000000 sssss ttttt ddddd 00000 101011"
+      "sltu $d $s $t": "000000 sssss ttttt ddddd 00000 101011",
+      "mul $d $s $t": "011100 sssss ttttt ddddd 00000 000010"
     },
     "DivMult": {
       "mult $s $t": "000000 sssss ttttt 00000 00000 011000",
@@ -36,9 +37,6 @@
     "ShiftV": {
       "sllv $d $t $s": "000000 sssss ttttt ddddd 00000 000100",
       "srav $d $t $s": "000000 sssss ttttt ddddd 00000 000111"
-    },
-    "Mul": {
-      "mul $d $s $t": "011100 sssss ttttt ddddd 00000 000010"
     },
     "Cl": {
       "clo $d $s": "011100 sssss 00000 ddddd 00000 100001",

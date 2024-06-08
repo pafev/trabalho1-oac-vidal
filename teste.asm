@@ -10,6 +10,15 @@ dados2: .word 4,
 add $t2, $t2, $s0
 or $s0, $s0, $t4
 sltu $v0, $zero, $a1
+mult $t1 $t2
+mfhi $s0
+jr $ra
+jalr $s0
+sllv $s0, $s4, $s3
+srav $s3, $a1, $a2
+mul $t1, $t3, $t7
+clo $v0, $v1
+clz $a1, $a2
 .data
     dados3:
     .word 32
