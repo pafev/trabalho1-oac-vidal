@@ -12,7 +12,7 @@ mif_value_buffer: .space 9  # formato: "00000000"
 mif_line_buffer: .space 22  # formato: "00000000 : 00000000;"
 data_labels: .space 128  # formato "label:${addr};label2:${addr + 4x};"
 text_labels: .space 128  # formato "label:${addr}:label2:${addr + 4x};"
-int_asciiz_buffer: .space 11
+dec_asciiz_buffer: .space 11
 hex_asciiz_buffer: .space 9
 register_buffer: .space 5
 instruction_buffer: .space 5
@@ -47,56 +47,119 @@ main:
 
 ## Funcoes Auxiliares
 
-## Entrada: $a0: tamanho do hex_asciiz_buffer
+
+## Entrada: $a0: ponteiro para o buffer contendo asciiz, entrada na conversao
+## Saida:   $v0: saida com valor em word convertido
+convert_hex_asciiz_to_word:
+    move $t1, $zero  # acumulador em word
+    convert_hex_asciiz_to_word_loop:
+        lb $t0, 0($a0)
+        beq $t0, $zero, end_convert_hex_asciiz_to_word
+        addi $a0, $a0, 1
+        blt $t0, 48, error_conversion_hex_asciiz
+        bgt $t0, 57, read_upper_alpha_digit_hex
+        sub $t0, $t0, '0'
+        j convert_digit_hex
+        read_upper_alpha_digit_hex:
+        blt $t0, 65, error_conversion_hex_asciiz
+        bgt $t0, 70, read_lower_alpha_digit_hex
+        sub $t0, $t0, 'A'
+        addi $t0, $t0, 10
+        j convert_digit_hex
+        read_lower_alpha_digit_hex:
+        blt $t0, 97, error_conversion_hex_asciiz
+        bgt $t0, 102, error_conversion_hex_asciiz
+        sub $t0, $t0, 'a'
+        addi $t0, $t0, 10
+        convert_digit_hex:
+        sll $t1, $t1, 4
+        add $t1, $t1, $t0
+        j convert_hex_asciiz_to_word_loop
+    end_convert_hex_asciiz_to_word:
+    move $v0, $t1
+    jr $ra
+
+
+## Entrada: nada, pois utilizará no dec_asciiz_buffer como entrada
+## Saida:   $v0: word com o valor convertido
+convert_dec_asciiz_to_word:
+    move $t1, $zero  # indice do dec_asciiz_buffer
+    move $t2, $zero  # acumulador da word
+    move $t7, $zero  # flag de negativo
+    # verifica se o asciiz em representacao dec eh negativo
+    lb $t0, dec_asciiz_buffer($t1)
+    beq $t0, '-', is_dec_asciiz_negative  # se eh negativo, seta flag de negativo
+    j convert_dec_asciiz_to_word_loop
+    is_dec_asciiz_negative:
+    li $t7, 1
+    addi $t1, $t1, 1
+    convert_dec_asciiz_to_word_loop:
+        lb $t0, dec_asciiz_buffer($t1)
+        beq $t0, $zero, end_convert_dec_asciiz_to_word
+        addi $t1, $t1, 1
+        sub $t0, $t0, '0'
+        mul $t2, $t2, 10
+        add $t2, $t2, $t0
+        j convert_dec_asciiz_to_word_loop
+    end_convert_dec_asciiz_to_word:
+    beq $t7, $zero, skip_negate_word
+    sub $t2, $zero, $t2  # nega a conversao se a entrada eh negativa
+    skip_negate_word:
+    move $v0, $t2
+    jr $ra
+
+
+## Entrada: $a0: tamanho de char's do resultado
 ##          $a1: ponteiro para o buffer a ser preenchido com o resultado
+##          Utiliza o que está em dec_asciiz_buffer como entrada da conversao
 ## Saida: nada, pois o próprio buffer passado é alterado
-convert_int_asciiz_to_hex_asciiz:
+convert_dec_asciiz_to_hex_asciiz:
     addi $sp, $sp, -4
     sw $ra, 0($sp)
     # inicializacoes
-    move $t1, $zero # indice do int_asciiz_buffer
-    move $t2, $zero  # acumulador do valor decimal
+    move $t1, $zero  # indice do dec_asciiz_buffer
+    move $t2, $zero  # acumulador da word
     move $t7, $zero  # flag de negativo
-    # verifica se o inteiro asciiz é negativo
-    lb $t3, int_asciiz_buffer($t1)
-    beq $t3, '-', is_negative
-    j convert_int_asciiz_to_int
-    # se negativo, seta uma flag para o convert_int_to_hex_asciiz
-    is_negative:
+    # verifica se o asciiz representado em dec é negativo
+    lb $t3, dec_asciiz_buffer($t1)
+    beq $t3, '-', is_negative_intermediary
+    j convert_dec_asciiz_to_word_intermediary
+    # se negativo, seta uma flag para o convert_word_to_hex_asciiz
+    is_negative_intermediary:
     li $t7, 1
     addi $t1, $t1, 1
     # primeiro converte para inteiro .word
-    convert_int_asciiz_to_int:
-        lb $t3, int_asciiz_buffer($t1)  # pega o char do int asciiz
-        bne $t3, $zero, skip_end_int_asciiz  # se não terminou de converter em word
+    convert_dec_asciiz_to_word_intermediary:
+        lb $t3, dec_asciiz_buffer($t1)  # pega o char do int asciiz
+        bne $t3, $zero, skip_end_dec_asciiz  # se não terminou de converter em word
         move $a3, $a1
         move $a1, $t2
         move $a2, $t7
-        jal convert_int_to_hex_asciiz
-        j end_convert_int_asciiz_to_hex_asciiz
-        skip_end_int_asciiz:
+        jal convert_word_to_hex_asciiz
+        j end_convert_dec_asciiz_to_hex_asciiz
+        skip_end_dec_asciiz:
         sub $t3, $t3, '0'  # converte o byte do char para seus bits em representação numérica
         mul $t2, $t2, 10  # multiplica o acumulador decimal por 10
         add $t2, $t2, $t3  # acrescenta o byte convertido ao acumulador do valor decimal
         addi $t1, $t1, 1  # incremeta para iterar para o proximo char do inteiro asciiz
-        j convert_int_asciiz_to_int
+        j convert_dec_asciiz_to_word_intermediary
     # fim da conversao :)
-    end_convert_int_asciiz_to_hex_asciiz:
+    end_convert_dec_asciiz_to_hex_asciiz:
     lw $ra, 0($sp)
     addi $sp, $sp, 4
     jr $ra
 
 
-## Entrada: $a0: tamanho do hex_asciiz_buffer
-##          $a1: valor inteiro a ser convertido para hex (asciiz)
+## Entrada: $a0: tamanho de char's do resultado
+##          $a1: word a ser convertida para asciiz, com representacao hex
 ##          $a2: flag de negativo
 ##          $a3: ponteiro para o buffer a ser preenchido com o resultado
-## Saida: nada, pois o próprio hex_asciiz_buffer é alterado
-convert_int_to_hex_asciiz:
-    beq $a2, $zero, skip_negate_int  # se o inteiro é negativo, nega os bits dele
+## Saida: nada, pois o próprio buffer passado é alterado
+convert_word_to_hex_asciiz:
+    beq $a2, $zero, skip_negate_word_intermediary  # se o inteiro é negativo, nega os bits dele
     sub $a1, $zero, $a1
     # se é positivo, segue normal
-    skip_negate_int:
+    skip_negate_word_intermediary:
     move $t1, $a1  # valor decimal em t1
     move $t2, $zero  # contador de dígitos para o valor em hexadecimal asciiz
     # conta os bytes necessarios para a representacao de hexadecimal em asciiz
@@ -130,13 +193,13 @@ convert_int_to_hex_asciiz:
             j convert_digits_hex_asciiz
         # preencho com zeros a esquerda
     fill_with_zeros:
-        beq $t0, $a3, end_convert_int_to_hex_asciiz
+        beq $t0, $a3, end_convert_word_to_hex_asciiz
         addi $t0, $t0, -1
         li $t3, 48
         sb $t3, 0($t0)
         j fill_with_zeros
     # fim da conversao :)
-    end_convert_int_to_hex_asciiz:
+    end_convert_word_to_hex_asciiz:
     sb $zero, 0($a0)
     jr $ra
 
@@ -420,7 +483,7 @@ save_data_label:
     li $a0, 4
     move $a2, $zero
     la $a3, hex_asciiz_buffer  # irá receber o valor do endereço em asciiz, representando hexadecimal
-    jal convert_int_to_hex_asciiz
+    jal convert_word_to_hex_asciiz
     move $t2, $zero
     search_end_data_labels:
         lb $t0, data_labels($t2)
@@ -632,14 +695,14 @@ encode_data_asm:
         addi $s0, $s0, -1
         j start_decimal_data_value
     start_decimal_data_value:
-        move $t1, $zero  # indice do int_asciiz_buffer
+        move $t1, $zero  # indice do dec_asciiz_buffer
         li $t6, 1  # flag de começo de valor
     decimal_data_value:
         lb $t0, asm_data_content($s0)
         addi $s0, $s0, 1
         blt $t0, 48, isnt_num_decimal_data_value  # se é um número, continua para guardar no int_asciiz_bufer iterativamente
         bgt $t0, 57, error_syntax
-        sb $t0, int_asciiz_buffer($t1)
+        sb $t0, dec_asciiz_buffer($t1)
         addi $t1, $t1, 1
         j decimal_data_value
     isnt_num_decimal_data_value:
@@ -648,21 +711,21 @@ encode_data_asm:
         beq $t0, '\n', end_decimal_data_value
         bne $t0, '-', error_syntax
         beq $t6, $zero, error_syntax
-        sb $t0, int_asciiz_buffer($t1)
+        sb $t0, dec_asciiz_buffer($t1)
         addi $t1, $t1, 1
         j decimal_data_value
     end_decimal_data_value:
-        # -- pega o que tá no int_asciiz_buffer e converte para hexa asciiz
-        sb $zero, int_asciiz_buffer($t1)
+        # -- pega o que tá no dec_asciiz_buffer e converte para hexa asciiz
+        sb $zero, dec_asciiz_buffer($t1)
         li $a0, 8
         la $a1, mif_value_buffer
-        jal convert_int_asciiz_to_hex_asciiz  # preenchi o mif_value_buffer
+        jal convert_dec_asciiz_to_hex_asciiz  # preenchi o mif_value_buffer
         # -- pega o endereço do data do mif e converte para hexa asciiz
         li $a0, 8
         move $a1, $s3
         move $a2, $zero
         la $a3, mif_addr_buffer
-        jal convert_int_to_hex_asciiz  # preenchi o mif_addr_buffer
+        jal convert_word_to_hex_asciiz  # preenchi o mif_addr_buffer
         # -- escreve uma linha no mif_data_content
         la $a0, mif_data_content
         move $a1, $s1
@@ -720,7 +783,7 @@ encode_data_asm:
             move $a1, $s3
             move $a2, $zero
             la $a3, mif_addr_buffer
-            jal convert_int_to_hex_asciiz  # preenchi o mif_addr_buffer
+            jal convert_word_to_hex_asciiz  # preenchi o mif_addr_buffer
              # -- escreve uma linha no mif_data_content
             la $a0, mif_data_content
             move $a1, $s1
@@ -803,12 +866,12 @@ encode_text_asm:
         move $a1, $s1
         move $a2, $zero
         la $a3, mif_addr_buffer
-        jal convert_int_to_hex_asciiz
+        jal convert_word_to_hex_asciiz
         li $a0, 8
         move $a1, $s2
         move $a2, $zero
         la $a3, mif_value_buffer
-        jal convert_int_to_hex_asciiz
+        jal convert_word_to_hex_asciiz
         la $a0, mif_text_content
         move $a1, $s3
         jal generate_mif_line
@@ -1607,6 +1670,12 @@ internal_error_bits_conversion:
     j error
 
 
+## Tratamento de erro de conversao de numero hexadecimal
+error_conversion_hex_asciiz:
+    la $a0, error_conversion_hex_asciiz_msg
+    j error
+
+
 error:
     li $v0, 4
     syscall
@@ -1630,6 +1699,7 @@ error_data_type_msg: .asciiz "Error: tipo de dado não reconhecido"
 error_register_syntax_msg: .asciiz "Error: nao foi possivel compreender o registrador passado"
 error_unknown_opcode_msg: .asciiz "Error: opcode desconhecido"
 error_unknown_instruction_msg: .asciiz "Error: instrucao desconhecida"
+error_conversion_hex_asciiz_msg: .asciiz "Error: erro ao ler numero hexadecimal"
 
 instructions_arithlog: .asciiz "add;sub;and;or;nor;xor;slt;addu;subu;movn;sltu;mul;"
 instructions_divmult: .asciiz "div;mult;"
