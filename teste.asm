@@ -15,21 +15,24 @@ mfhi     $s0
 jr $ra
 jalr $s0
 
-sllv $s0,     $s4, $s3
+label: sllv $s0,     $s4, $s3
 srav $s3, $a1, $a2
 mul $t1, $t3, $t7
-
 
 
 clo $v0, $v1
             clz $a1,          $a2
 sll $t1, $t1, 2
-srl $t5, $a3, 31
+label2: srl $t5, $a3, 31
 addi $t2, $t2, 32
+label3:
 lw $t2, 100   ($a0)
 sb $v1      ,          0x12     ($t3)
 
 lui $t2 8
+j label
+j label2
+jal label3
 .data
     dados3:
     .word 32

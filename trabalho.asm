@@ -10,8 +10,8 @@ label_buffer: .space 20
 mif_addr_buffer: .space 9  # formato: "00000000"
 mif_value_buffer: .space 9  # formato: "00000000"
 mif_line_buffer: .space 22  # formato: "00000000 : 00000000;"
-data_labels: .space 128  # formato "label:${addr};label2:${addr + 4x};"
-text_labels: .space 128  # formato "label:${addr}:label2:${addr + 4x};"
+data_labels: .space 128  # formato "label:${addr};label2:${addr + 4x};-"
+text_labels: .space 128  # formato "label:${addr};label2:${addr + 4x};-"
 dec_asciiz_buffer: .space 11
 hex_asciiz_buffer: .space 9
 register_buffer: .space 5
@@ -441,6 +441,49 @@ get_register_word:
     jr $ra
 
 
+## Entrada: $a0: ponteiro ao conjunto de labels em que sera buscada a label que esta em label_buffer
+## Saida:   $v0: flag de existencia da label (se 1, label existe no conjunto passado. Se 0, nao)
+##          $v1: endereco da label, se encontrada
+get_label_addr:
+    move $t2, $a0  # indice do conjunto de labels
+    move $v0, $zero  # flag de existencia da label
+    move $v1, $zero  # endereco da label
+    start_checks_equality_labels:
+        move $t3, $zero  # indice do label_buffer
+        checks_equality_labels:
+            lb $t0, 0($t2)
+            addi $t2, $t2, 1
+            lb $t1, label_buffer($t3)
+            addi $t3, $t3, 1
+            beq $t0, '-', end_get_label_addr
+            bne $t0, ':', skip_end_checks_equality_labels
+            bne $t1, $zero, skip_label_in_labels
+            li $v0, 1
+            j end_checks_equality_labels
+            skip_end_checks_equality_labels:
+            beq $t0, $t1, checks_equality_labels
+    skip_label_in_labels:
+        lb $t0, 0($t2)
+        addi $t2, $t2, 1
+        beq $t0, ';', start_checks_equality_labels
+        j skip_label_in_labels
+    end_checks_equality_labels:
+        move $t0, $zero
+        lb $t0, 0($t2)
+        addu $v1, $v1, $t0
+        lb $t0, 1($t2)
+        sll $t0, $t0, 8
+        addu $v1, $v1, $t0
+        lb $t0, 2($t2)
+        sll $t0, $t0, 16
+        addu $v1, $v1, $t0
+        lb $t0, 3($t2)
+        sll $t0, $t0, 24
+        addu $v1, $v1, $t0
+    end_get_label_addr:
+        jr $ra
+
+
 ## Entrada: $a0: conjunto de instrucoes em que ira checar o pertencimento do que esta em instruction_buffer
 ## Saida: $v0: flag de pertencimento (se 1, pertence a esse conjunto de instrucoes. Se 0, nao pertence)
 ##        $v1: posicao do ';' apos a instrucao igual a passada, caso pertenca ao grupo
@@ -461,7 +504,6 @@ belongs_to_instruction_set:
             j end_belongs_to_instruction_set
             skip_end_checks_equality_instructions:
             beq $t0,, $t1, checks_equality_instructions
-            j skip_instruction_in_instruction_set
     skip_instruction_in_instruction_set:
         lb $t0, 0($t2)
         addi $t2, $t2, 1
@@ -521,7 +563,7 @@ save_data_label:
     jr $ra
 
 
-## Entrada: $a0: valor em word endereco da text label no .asm (0x004XXXXX e multiplo de 4)
+## Entrada: $a0: valor em word do endereco da text label no .asm (0x004XXXXX e multiplo de 4)
 ##          Utiliza o nome da label em label_buffer
 ## Saida: Nada, pois o próprio text_labels eh alterado
 save_text_label:
@@ -530,11 +572,11 @@ save_text_label:
     move $t1, $zero  # indice de onde comecar a acrescentar a nova label em text_label
     search_end_text_labels:  # procura final do text_labels, para entao fazer o append
         lb $t0, text_labels($t1)
-        beq $t0, $zero, append_text_labels
+        beq $t0, '-', append_text_labels
         addi $t1, $t1, 1
         j search_end_text_labels
     append_text_labels:
-    move $t2, $zero
+    move $t2, $zero  # indice do label_buffer
     append_label_in_text_labels:
         lb $t0, label_buffer($t2)
         beq $t0, $zero, append_separator_in_text_labels
@@ -561,6 +603,9 @@ save_text_label:
     li $t0, 59
     sb $t0, text_labels($t1)
     addi $t1, $t1, 1
+    li $t0, 45
+    sb $t0, text_labels($t1)
+    addi $t1, $t1, 1
     sb $zero, text_labels($t1)
     lw $ra, 0($sp)
     addi $sp, $sp, 4
@@ -576,6 +621,10 @@ extract_text_labels:
     sw $s1, 8($sp)
     sw $s0, 4($sp)
     sw $ra, 0($sp)
+    # prepara text_labels (pradonizada finalizar com '-')
+    li $t0, 45
+    sb $t0, text_labels($zero)
+    # comeca extracao
     move $s0, $zero  # indice do asm_text_content antigo
     li $s1, 0x400000  # endereco da linha
     move $s2, $zero  # indice do asm_text_content novo
@@ -1627,7 +1676,35 @@ encode_load_i_instruction:
         addu $s2, $s2, $v0
         j end_encode_instruction
 
+
 encode_jump_instruction:
+    beq $v1, 2, get_j_opcode
+    beq $v1, 6, get_jal_opcode
+    get_j_opcode:
+        addiu $s2, $s2, 0x8000000
+        j start_get_label_jump
+    get_jal_opcode:
+        addiu $s2, $s2, 0xc000000
+    start_get_label_jump:
+    move $t1, $zero  # indice do label_buffer
+    sb $zero, label_buffer($zero)  # zerando label_buffer
+    get_label_jump:
+        lb $t0, asm_text_content($s0)
+        beq $t0, $zero, save_label_jump
+        beq $t0, '\n', save_label_jump
+        beq $t0, ' ', error_syntax
+        addi $s0, $s0, 1
+        sb $t0, label_buffer($t1)
+        addi $t1, $t1, 1
+        j get_label_jump
+    save_label_jump:
+        sb $zero, label_buffer($t1)
+        la $a0, text_labels
+        jal get_label_addr
+        beq $v0, $zero, error_syntax
+        srl $v1, $v1, 2
+        addu $s2, $s2, $v1
+        j end_encode_instruction
 
 
 ## Entrada: $a0: ponteiro para o conteudo asciiz a ser normalizado
