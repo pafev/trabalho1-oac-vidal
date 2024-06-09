@@ -47,7 +47,6 @@ main:
 
 ## Funcoes Auxiliares
 
-
 ## Entrada: $a0: ponteiro para o buffer contendo asciiz, entrada na conversao
 ## Saida:   $v0: saida com valor em word convertido
 convert_hex_asciiz_to_word:
@@ -672,7 +671,6 @@ extract_text_labels:
 
 
 ## Funcoes Principais
-
 
 ## Entrada: nada
 ## Saida: $v0: tamanho do mif_data_content
@@ -1502,6 +1500,59 @@ encode_arithlog_i_instruction:
 
 
 encode_branch_z_instruction:
+    beq $v1, 5, get_bgez_opcode
+    beq $v1, 12, get_bgezal_opcode
+    beq $v1, 19, get_bltzal_opcode
+    get_bgez_opcode:
+        addiu $s2, $s2, 0x04010000
+        j start_get_s_register_branchz
+    get_bgezal_opcode:
+        addiu $s2, $s2, 0x04110000
+        j start_get_s_register_branchz
+    get_bltzal_opcode:
+        addiu $s2, $s2, 0x04100000
+    start_get_s_register_branchz:
+    lb $t0, asm_text_content($s0)
+    addi $s0, $s0, 1
+    bne $t0, '$', error_unknown_instruction
+    move $t1, $zero
+    sb $zero, register_buffer($zero)
+    get_s_register_branchz:
+        lb $t0, asm_text_content($s0)
+        addi $s0, $s0, 1
+        beq $t0, ' ', save_s_register_branchz
+        sb $t0, register_buffer($t1)
+        addi $t1, $t1, 1
+        j get_s_register_branchz
+    save_s_register_branchz:
+        sb $zero, register_buffer($t1)
+        jal get_register_word
+        sll $v0, $v0, 21
+        addu $s2, $s2, $v0
+    start_get_label_branchz:
+    move $t1, $zero
+    sb $zero, label_buffer($zero)
+    get_label_branchz:
+        lb $t0, asm_text_content($s0)
+        beq $t0, $zero, save_label_branchz
+        beq $t0, '\n', save_label_branchz
+        beq $t0, ' ', error_syntax
+        addi $s0, $s0, 1
+        sb $t0, label_buffer($t1)
+        addi $t1, $t1, 1
+        j get_label_branchz
+    save_label_branchz:
+        sb $zero, label_buffer($t1)
+        la $a0, text_labels
+        jal get_label_addr
+        beq $v0, $zero, error_syntax
+        srl $v1, $v1, 2  # v1 recebe addr_label/4
+        addi $t2, $s1, 0x00100001  # t2 recebe (PC + 4)/4
+        sub $v1, $v1, $t2  # v1 recebe (addr_label - PC + 4)/4
+        andi $v1, $v1, 0xffff  # filtra os bytes do imm que vai para a montagem da instrucao
+        addu $s2, $s2, $v1
+        j end_encode_instruction
+
 
 encode_load_store_instruction:
     beq $v1, 3, get_lw_opcode
@@ -1610,6 +1661,73 @@ encode_load_store_instruction:
 
 
 encode_branch_instruction:
+    beq $v1, 4, get_beq_opcode
+    beq $v1, 8, get_bne_opcode
+    get_beq_opcode:
+        addiu $s2, $s2, 0x10000000
+        j start_get_s_register_branch
+    get_bne_opcode:
+        addiu $s2, $s2, 0x14000000
+    start_get_s_register_branch:
+    lb $t0, asm_text_content($s0)
+    addi $s0, $s0, 1
+    bne $t0, '$', error_unknown_instruction
+    move $t1, $zero
+    sb $zero, register_buffer($zero)
+    get_s_register_branch:
+        lb $t0, asm_text_content($s0)
+        addi $s0, $s0, 1
+        beq $t0, ' ', save_s_register_branch
+        sb $t0, register_buffer($t1)
+        addi $t1, $t1, 1
+        j get_s_register_branch
+    save_s_register_branch:
+        sb $zero, register_buffer($t1)
+        jal get_register_word
+        sll $v0, $v0, 21
+        addu $s2, $s2, $v0
+    start_get_t_register_branch:
+    lb $t0, asm_text_content($s0)
+    addi $s0, $s0, 1
+    bne $t0, '$', error_unknown_instruction
+    move $t1, $zero
+    sb $zero, register_buffer($zero)
+    get_t_register_branch:
+        lb $t0, asm_text_content($s0)
+        addi $s0, $s0, 1
+        beq $t0, ' ', save_t_register_branch
+        sb $t0, register_buffer($t1)
+        addi $t1, $t1, 1
+        j get_t_register_branch
+    save_t_register_branch:
+        sb $zero, register_buffer($t1)
+        jal get_register_word
+        sll $v0, $v0, 16
+        addu $s2, $s2, $v0
+    start_get_label_branch:
+    move $t1, $zero
+    sb $zero, label_buffer($zero)
+    get_label_branch:
+        lb $t0, asm_text_content($s0)
+        beq $t0, $zero, save_label_branch
+        beq $t0, '\n', save_label_branch
+        beq $t0, ' ', error_syntax
+        addi $s0, $s0, 1
+        sb $t0, label_buffer($t1)
+        addi $t1, $t1, 1
+        j get_label_branch
+    save_label_branch:
+        sb $zero, label_buffer($t1)
+        la $a0, text_labels
+        jal get_label_addr
+        beq $v0, $zero, error_syntax
+        srl $v1, $v1, 2  # v1 recebe addr_label/4
+        addi $t2, $s1, 0x00100001  # t2 recebe (PC + 4)/4
+        sub $v1, $v1, $t2  # v1 recebe (addr_label - PC + 4)/4
+        andi $v1, $v1, 0xffff  # filtra os bytes do imm que vai para a montagem da instrucao
+        addu $s2, $s2, $v1
+        j end_encode_instruction
+
 
 encode_load_i_instruction:
     addiu $s2, $s2, 0x3c000000
@@ -2093,6 +2211,7 @@ get_input_file:
             sb $zero, -1($t0)
             jr $ra
 
+
 ## Tratamento de erro ao abrir arquivo
 error_open_file:
     la $a0, error_open_file_msg
@@ -2145,6 +2264,7 @@ error:
     li $v0, 4
     syscall
     j end
+
 
 ## Entrada: nada
 ## Saida: nada

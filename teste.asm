@@ -16,6 +16,7 @@ jr $ra
 jalr $s0
 
 label: sllv $s0,     $s4, $s3
+bgez $t1, label
 srav $s3, $a1, $a2
 mul $t1, $t3, $t7
 
@@ -33,6 +34,8 @@ lui $t2 8
 j label
 j label2
 jal label3
+beq $t1   $t3, label3
+bne $t2, $s0, label
 .data
     dados3:
     .word 32
