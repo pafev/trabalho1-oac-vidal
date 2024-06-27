@@ -514,100 +514,48 @@ belongs_to_instruction_set:
         jr $ra
 
 
-## Entrada: $a0: valor em word do endereço da label no .asm (multiplo de 4)
-##          utiliza o nome da label em label_buffer
-## Saida: nada, pois o próprio valor de data_labels é alterado
-save_data_label:
-    addi $sp, $sp, -4
-    sw $ra, 0($sp)
-    move $a1, $a0  # valor do endereço em word
-    li $a0, 4
-    move $a2, $zero
-    la $a3, hex_asciiz_buffer  # irá receber o valor do endereço em asciiz, representando hexadecimal
-    jal convert_word_to_hex_asciiz
-    move $t2, $zero
-    search_end_data_labels:
-        lb $t0, data_labels($t2)
-        beq $t0, $zero, append_data_labels
-        addi $t2, $t2, 1
-        j search_end_data_labels
-    append_data_labels:
-    move $t1, $zero
-    append_label_in_data_labels:
-        lb $t0, label_buffer($t1)
-        beq $t0, $zero, append_separator_in_data_labels
-        addi $t1, $t1, 1
-        sb $t0, data_labels($t2)
-        addi $t2, $t2, 1
-        j append_label_in_data_labels
-    append_separator_in_data_labels:
-        li $t0, 58
-        sb $t0, data_labels($t2)
-        addi $t2, $t2, 1
-    move $t1, $zero
-    append_addr_in_data_labels:
-        lb $t0, hex_asciiz_buffer($t1)
-        beq $t0, $zero, end_save_data_label
-        addi $t1, $t1, 1
-        sb $t0, data_labels($t2)
-        addi $t2, $t2, 1
-        j append_addr_in_data_labels    
-    end_save_data_label:
-        li $t0, 59
-        sb $t0, data_labels($t2)
-        addi $t2, $t2, 1
-        sb $zero, data_labels($t2)
-    lw $ra, 0($sp)
-    addi $sp, $sp, 4
-    jr $ra
-
-
-## Entrada: $a0: valor em word do endereco da text label no .asm (0x004XXXXX e multiplo de 4)
+## Entrada: $a0: valor em word do endereco da label no .asm
+##          $a1: buffer de labels em que sera salva a label e seu endereco (text_labels ou data_labels)
 ##          Utiliza o nome da label em label_buffer
 ## Saida: Nada, pois o próprio text_labels eh alterado
-save_text_label:
-    addi $sp, $sp, -4
-    sw $ra, 0($sp)
-    move $t1, $zero  # indice de onde comecar a acrescentar a nova label em text_label
-    search_end_text_labels:  # procura final do text_labels, para entao fazer o append
-        lb $t0, text_labels($t1)
-        beq $t0, '-', append_text_labels
-        addi $t1, $t1, 1
-        j search_end_text_labels
-    append_text_labels:
+save_label:
+    search_end_labels:  # procura final do labels, para entao fazer o append
+        lb $t0, 0($a1)
+        beq $t0, '-', append_labels
+        addi $a1, $a1, 1
+        j search_end_labels
+    append_labels:
     move $t2, $zero  # indice do label_buffer
-    append_label_in_text_labels:
+    append_label_in_labels:
         lb $t0, label_buffer($t2)
-        beq $t0, $zero, append_separator_in_text_labels
+        beq $t0, $zero, append_separator_in_labels
         addi $t2, $t2, 1
-        sb $t0, text_labels($t1)
-        addi $t1, $t1, 1
-        j append_label_in_text_labels
-    append_separator_in_text_labels:
+        sb $t0, 0($a1)
+        addi $a1, $a1, 1
+        j append_label_in_labels
+    append_separator_in_labels:
         li $t0, 58
-        sb $t0, text_labels($t1)
-        addi $t1, $t1, 1
-    append_addr_in_text_labels:
-        sb $a0, text_labels($t1)
-        addi $t1, $t1, 1
+        sb $t0, 0($a1)
+        addi $a1, $a1, 1
+    append_addr_in_labels:
+        sb $a0, 0($a1)
+        addi $a1, $a1, 1
         srl $a0, $a0, 8
-        sb $a0, text_labels($t1)
-        addi $t1, $t1, 1
+        sb $a0, 0($a1)
+        addi $a1, $a1, 1
         srl $a0, $a0, 8
-        sb $a0, text_labels($t1)
-        addi $t1, $t1, 1
+        sb $a0, 0($a1)
+        addi $a1, $a1, 1
         srl $a0, $a0 8
-        sb $a0, text_labels($t1)
-        addi $t1, $t1, 1
+        sb $a0, 0($a1)
+        addi $a1, $a1, 1
     li $t0, 59
-    sb $t0, text_labels($t1)
-    addi $t1, $t1, 1
+    sb $t0, 0($a1)
+    addi $a1, $a1, 1
     li $t0, 45
-    sb $t0, text_labels($t1)
-    addi $t1, $t1, 1
-    sb $zero, text_labels($t1)
-    lw $ra, 0($sp)
-    addi $sp, $sp, 4
+    sb $t0, 0($a1)
+    addi $a1, $a1, 1
+    sb $zero, 0($a1)
     jr $ra
 
 
@@ -652,7 +600,8 @@ extract_text_labels:
     save_text_label_for_asm:
         sb $zero, label_buffer($t2)
         move $a0, $s1
-        jal save_text_label
+        la $a1, text_labels
+        jal save_label
         lb $t0, asm_text_content($s3)
         bne $t0, '\n', skip_check_end_line
         addi $s0, $s3, 1
@@ -681,6 +630,9 @@ encode_data_asm:
     move $s1, $zero  # indice do mif_data_content
     move $s2, $zero  # valor do endereço asm
     move $s3, $zero  # valor do endereço mif
+    # coloca '-' em data_labels
+    li $t0, 45
+    sb $t0, data_labels($zero) # pradonizado para iniciar com '-'
     start_identifying_label:
         move $t1, $zero  # indice do label_buffer
         li $t6, 1  # flag de começo de label
@@ -702,7 +654,8 @@ encode_data_asm:
     save_label_for_asm:
         sb $zero, label_buffer($t1)
         move $a0, $s2  # valor do endereço asm
-        jal save_data_label
+        la $a1, data_labels
+        jal save_label
         sb $zero, label_buffer($zero)
     identifying_data_type:
         lb $t0, asm_data_content($s0)
@@ -856,9 +809,8 @@ encode_data_asm:
 encode_text_asm:
     addi $sp, $sp, -4
     sw $ra, 0($sp)
-
+    # comeca extraindo as labels do conteudo .text
     jal extract_text_labels
-
     move $s0, $zero  # indice do asm_text_content
     move $s1, $zero  # endereco do mif
     move $s2, $zero  # valor do mif
@@ -935,7 +887,6 @@ encode_text_asm:
         la $a0, instructions_jump
         jal belongs_to_instruction_set
         beq $v0, 1, encode_jump_instruction
-
         j error_unknown_opcode    
     end_encode_instruction:
         # preenchendo mif_addr_buffer com o que ha em s1
@@ -1215,7 +1166,6 @@ encode_jump_r_instruction:
     sll $v0, $v0, 21
     addu $s2, $s2, $v0
     j end_encode_instruction
-
 
 encode_shift_instruction:
     beq $v1, 4, encode_shift_params
@@ -1880,58 +1830,37 @@ get_input_file:
 error_open_file:
     la $a0, error_open_file_msg
 	j error
-
-
 ## Tratamento de erro de sintaxe genérico
 error_syntax:
     la $a0, error_syntax_msg
     j error
-
-
 ## Tratamento de erro de tipo de dado em .data desconhecido
 error_data_type:
     la $a0, error_data_type_msg
     j error
-
-
 ## Tratamento de erro de registrador desconhecido
 error_register_syntax:
     la $a0, error_register_syntax_msg
     j error
-
-
 ## Tratamento de erro de opcode desconhecido
 error_unknown_opcode:
     la $a0, error_unknown_opcode_msg
     j error
-
-
 ## Tratamento de erro de instrucao desconhecida
 error_unknown_instruction:
     la $a0, error_unknown_instruction_msg
     j error
-
-
 ## Tratamento de erro de conversao de bits
 internal_error_bits_conversion:
     la $a0, internal_error_bits_conversion_msg
     j error
-
-
 ## Tratamento de erro de conversao de numero hexadecimal
 error_conversion_hex_asciiz:
     la $a0, error_conversion_hex_asciiz_msg
     j error
-
-
 error:
     li $v0, 4
     syscall
-    j end
-
-
-## Entrada: nada
-## Saida: nada
 end:
     li $v0, 10
     syscall
