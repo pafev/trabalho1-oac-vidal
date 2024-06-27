@@ -838,6 +838,10 @@ encode_text_asm:
     process_text_instruction:
         sb $zero, instruction_buffer($t1)
         # identifica qual a instrucao que sera lida e faz o encode apropriado
+        la $a0, instructions_pseudo
+        jal belongs_to_instruction_set
+        beq $v0, 1, encode_pseudo_instruction
+
         la $a0, instructions_arithlog
         jal belongs_to_instruction_set
         beq $v0, 1, encode_arithlog_instruction
@@ -1050,6 +1054,9 @@ encode_i:
         bgt $v0, 0xffff, internal_error_bits_conversion
         addu $s2, $s2, $v0
         j end_encode_instruction
+
+encode_pseudo_instruction:
+    beq $v1, 4, get_addi_opcode
 
 encode_arithlog_instruction:
     beq $v1, 4, get_add_function
@@ -1881,6 +1888,7 @@ error_unknown_opcode_msg: .asciiz "Error: opcode desconhecido"
 error_unknown_instruction_msg: .asciiz "Error: instrucao desconhecida"
 error_conversion_word_asciiz_msg: .asciiz "Error: word passada em formato invalido"
 
+instructions_pseudo: .asciiz "add;"
 instructions_arithlog: .asciiz "add;sub;and;or;nor;xor;slt;addu;subu;movn;sltu;mul;"
 instructions_divmult: .asciiz "div;mult;"
 instructions_move_from: .asciiz "mfhi;mflo;"
