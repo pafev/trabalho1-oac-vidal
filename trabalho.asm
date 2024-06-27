@@ -900,10 +900,6 @@ encode_text_asm:
         jal belongs_to_instruction_set
         beq $v0, 1, encode_jump_r_instruction
         
-        la $a0, instructions_jump_alr
-        jal belongs_to_instruction_set
-        beq $v0, 1, encode_jump_alr_instruction
-        
         la $a0, instructions_shift
         jal belongs_to_instruction_set
         beq $v0, 1, encode_shift_instruction
@@ -976,8 +972,132 @@ encode_text_asm:
     addi $sp, $sp, 4
     jr $ra
 
+fill_register_buffer:
+    lb $t0, asm_text_content($s0)
+    addi $s0, $s0, 1
+    bne $t0, '$', error_unknown_instruction
+    move $t1, $zero  # indice do register_buffer
+    sb $zero, register_buffer($zero)  # zerando register_buffer
+    loop_fill_register_buffer:
+        lb $t0, asm_text_content($s0)
+        addi $s0, $s0, 1
+        beq $t0, ' ', end_fill_register_buffer
+        sb $t0, register_buffer($t1)
+        addi $t1, $t1, 1
+        j loop_fill_register_buffer
+    end_fill_register_buffer:
+    sb $zero, register_buffer($t1)
+    jr $ra
 
-## Montagem das instrucoes ArithLog
+fill_register_buffer_endl:
+    lb $t0, asm_text_content($s0)
+    addi $s0, $s0, 1
+    bne $t0, '$', error_unknown_instruction
+    move $t1, $zero  # indice do register_buffer
+    sb $zero, register_buffer($zero)  # zerando register_buffer
+    loop_fill_register_buffer_endl:
+        lb $t0, asm_text_content($s0)
+        beq $t0, $zero, end_fill_register_buffer_endl
+        beq $t0, '\n', end_fill_register_buffer_endl
+        beq $t0, ' ', end_fill_register_buffer_endl
+        addi $s0, $s0, 1
+        sb $t0, register_buffer($t1)
+        addi $t1, $t1, 1
+        j loop_fill_register_buffer_endl
+    end_fill_register_buffer_endl:
+    sb $zero, register_buffer($t1)
+    jr $ra
+
+encode_label_branch:
+    move $t1, $zero
+    sb $zero, label_buffer($zero)
+    loop_encode_label_branch:
+        lb $t0, asm_text_content($s0)
+        beq $t0, $zero, end_encode_label_branch
+        beq $t0, '\n', end_encode_label_branch
+        beq $t0, ' ', error_syntax
+        addi $s0, $s0, 1
+        sb $t0, label_buffer($t1)
+        addi $t1, $t1, 1
+        j loop_encode_label_branch
+    end_encode_label_branch:
+        sb $zero, label_buffer($t1)
+        la $a0, text_labels
+        jal get_label_addr
+        beq $v0, $zero, error_syntax
+        srl $v1, $v1, 2  # v1 recebe addr_label/4
+        addi $t2, $s1, 0x00100001  # t2 recebe (PC + 4)/4
+        sub $v1, $v1, $t2  # v1 recebe (addr_label - PC + 4)/4
+        andi $v1, $v1, 0xffff  # filtra os bytes do imm que vai para a montagem da instrucao
+        addu $s2, $s2, $v1
+        j end_encode_instruction
+
+encode_label_jump:
+    move $t1, $zero  # indice do label_buffer
+    sb $zero, label_buffer($zero)  # zerando label_buffer
+    loop_encode_label_jump:
+        lb $t0, asm_text_content($s0)
+        beq $t0, $zero, end_encode_label_jump
+        beq $t0, '\n', end_encode_label_jump
+        beq $t0, ' ', error_syntax
+        addi $s0, $s0, 1
+        sb $t0, label_buffer($t1)
+        addi $t1, $t1, 1
+        j loop_encode_label_jump
+    end_encode_label_jump:
+        sb $zero, label_buffer($t1)
+        la $a0, text_labels
+        jal get_label_addr
+        beq $v0, $zero, error_syntax
+        srl $v1, $v1, 2
+        addu $s2, $s2, $v1
+        j end_encode_instruction
+
+encode_i:
+    move $t1, $zero  # indice do buffer que vai armazenar i
+    lb $t0, asm_text_content($s0)
+    bne $t0, '0', start_get_i_dec
+    addi $s0, $s0, 1
+    lb $t0, asm_text_content($s0)
+    bne $t0, 'x', start_get_i_dec
+    addi $s0, $s0, 1
+    j start_get_i_hex
+    start_get_i_dec:
+    sb $zero, dec_asciiz_buffer($zero)
+    get_i_dec:
+        lb $t0, asm_text_content($s0)
+        beq $t0, $zero, save_i_dec
+        beq $t0, '\n', save_i_dec
+        beq $t0, ' ', save_i_dec
+        addi $s0, $s0, 1
+        sb $t0, dec_asciiz_buffer($t1)
+        addi $t1, $t1, 1
+        j get_i_dec
+    save_i_dec:
+        sb $zero, dec_asciiz_buffer($t1)
+        jal convert_dec_asciiz_to_word
+        bgt $v0, 0xffff, internal_error_bits_conversion
+        addu $s2, $s2, $v0
+        j end_encode_instruction
+    start_get_i_hex:
+    sb $zero, hex_asciiz_buffer($zero)
+    get_i_hex:
+        lb $t0, asm_text_content($s0)
+        beq $t0, $zero, save_i_hex
+        beq $t0, '\n', save_i_hex
+        beq $t0, ' ', save_i_hex
+        addi $s0, $s0, 1
+        sb $t0, hex_asciiz_buffer($t1)
+        addi $t1, $t1, 1
+        j get_i_hex
+    save_i_hex:
+        sb $zero, hex_asciiz_buffer($t1)
+        la $a0, hex_asciiz_buffer
+        jal convert_hex_asciiz_to_word
+        bgt $v0, 0xffff, internal_error_bits_conversion
+        addu $s2, $s2, $v0
+        j end_encode_instruction
+
 encode_arithlog_instruction:
     beq $v1, 4, get_add_function
     beq $v1, 8, get_sub_function
@@ -993,92 +1113,52 @@ encode_arithlog_instruction:
     beq $v1, 51, get_mul_function
     get_add_function:
         addiu $s2, $s2, 32
-        j start_get_d_register_arithlog
+        j encode_arithlog_params
     get_sub_function:
         addiu $s2, $s2, 34
-        j start_get_d_register_arithlog
+        j encode_arithlog_params
     get_and_function:
         addiu $s2, $s2, 36
-        j start_get_d_register_arithlog
+        j encode_arithlog_params
     get_or_function:
         addiu $s2, $s2, 37
-        j start_get_d_register_arithlog
+        j encode_arithlog_params
     get_nor_function:
         addiu $s2, $s2, 39
-        j start_get_d_register_arithlog
+        j encode_arithlog_params
     get_xor_function:
         addiu $s2, $s2, 38
-        j start_get_d_register_arithlog
+        j encode_arithlog_params
     get_slt_function:
         addiu $s2, $s2, 42
-        j start_get_d_register_arithlog
+        j encode_arithlog_params
     get_addu_function:
         addiu $s2, $s2, 33
-        j start_get_d_register_arithlog
+        j encode_arithlog_params
     get_subu_function:
         addiu $s2, $s2, 35
-        j start_get_d_register_arithlog
+        j encode_arithlog_params
     get_movn_function:
         addiu $s2, $s2, 11
-        j start_get_d_register_arithlog
+        j encode_arithlog_params
     get_sltu_function:
         addiu $s2, $s2, 43
-        j start_get_d_register_arithlog
+        j encode_arithlog_params
     get_mul_function:
         addiu $s2, $s2, 1879048194
-    start_get_d_register_arithlog:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero  # indice do register_buffer
-    sb $zero, register_buffer($zero)  # zerando register_buffer
-    get_d_register_arithlog:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_d_register_arithlog
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_d_register_arithlog
-    save_d_register_arithlog:
-        sb $zero, register_buffer($t1)
+    encode_arithlog_params:
+        # encode do registrador d
+        jal fill_register_buffer
         jal get_register_word
         sll $v0, $v0, 11
         addu $s2, $s2, $v0
-    start_get_s_register_arithlog:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero  # indice do register_buffer
-    sb $zero, register_buffer($zero)  # zerando register_buffer
-    get_s_register_arithlog:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_s_register_arithlog
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_s_register_arithlog
-    save_s_register_arithlog:
-        sb $zero, register_buffer($t1)
+        # encode do registrador s
+        jal fill_register_buffer
         jal get_register_word
         sll $v0, $v0, 21
         addu $s2, $s2, $v0
-    start_get_t_register_arithlog:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero  # indice do register_buffer
-    sb $zero, register_buffer($zero)  # zerando register_buffer
-    get_t_register_arithlog:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_t_register_arithlog
-        beq $t0, '\n', save_t_register_arithlog
-        beq $t0, ' ', save_t_register_arithlog
-        addi $s0, $s0, 1
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_t_register_arithlog
-    save_t_register_arithlog:
-        sb $zero, register_buffer($t1)
+        # encode do registrador t
+        jal fill_register_buffer_endl
         jal get_register_word
         sll $v0, $v0, 16
         addu $s2, $s2, $v0
@@ -1089,309 +1169,140 @@ encode_divmult_instruction:
     beq $v1, 9, get_mult_function
     get_div_function:
         addiu $s2, $s2, 26
-        j start_get_s_register_divmult
+        j encode_divmult_params
     get_mult_function:
         addiu $s2, $s2, 24
-    start_get_s_register_divmult:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_s_register_divmult:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_s_register_divmult
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_s_register_divmult
-    save_s_register_divmult:
-        sb $zero, register_buffer($t1)
+    encode_divmult_params:
+        # encode do registrador s
+        jal fill_register_buffer
         jal get_register_word
         sll $v0, $v0, 21
         addu $s2, $s2, $v0
-    start_get_t_register_divmult:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_t_register_divmult:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_t_register_divmult
-        beq $t0, '\n', save_t_register_divmult
-        beq $t0, ' ', save_t_register_divmult
-        addi $s0, $s0, 1
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_t_register_divmult
-    save_t_register_divmult:
-        sb $zero, register_buffer($t1)
+        # encode do registrador t
+        jal fill_register_buffer_endl
         jal get_register_word
         sll $v0, $v0, 16
         addu $s2, $s2, $v0
         j end_encode_instruction
-
 
 encode_move_from_instruction:
     beq $v1, 5, get_mfhi_function
     beq $v1, 10, get_mflo_function
     get_mfhi_function:
         addiu $s2, $s2, 16
-        j start_get_d_register_movefrom
+        j encode_move_from_params
     get_mflo_function:
         addiu $s2, $s2, 18
-    start_get_d_register_movefrom:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        bne $t0, '$', error_unknown_instruction
-        move $t1, $zero
-        sb $zero, register_buffer($zero)
-    get_d_register_movefrom:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_d_register_movefrom
-        beq $t0, '\n', save_d_register_movefrom
-        beq $t0, ' ', save_d_register_movefrom
-        addi $s0, $s0, 1
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_d_register_movefrom
-    save_d_register_movefrom:
-        sb $zero, register_buffer($t1)
+    encode_move_from_params:
+        jal fill_register_buffer_endl
         jal get_register_word
         sll $v0, $v0, 11
         addu $s2, $s2, $v0
         j end_encode_instruction
 
 encode_jump_r_instruction:
-    addiu $s2, $s2, 8
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_s_register_jumpr:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_s_register_jumpr
-        beq $t0, '\n', save_s_register_jumpr
-        beq $t0, ' ', save_s_register_jumpr
-        addi $s0, $s0, 1
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_s_register_jumpr
-    save_s_register_jumpr:
-        sb $zero, register_buffer($t1)
-        jal get_register_word
-        sll $v0, $v0, 21
-        addu $s2, $s2, $v0
-        j end_encode_instruction
-
-
-encode_jump_alr_instruction:
-    addiu $s2, $s2, 63497
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_s_register_jumpalr:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_s_register_jumpalr
-        beq $t0, '\n', save_s_register_jumpalr
-        beq $t0, ' ', save_s_register_jumpalr
-        addi $s0, $s0, 1
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_s_register_jumpalr
-    save_s_register_jumpalr:
-        sb $zero, register_buffer($t1)
-        jal get_register_word
-        sll $v0, $v0, 21
-        addu $s2, $s2, $v0
-        j end_encode_instruction
+    beq $v1, 3, get_jr_function
+    beq $v1, 8, get_jalr_function
+    get_jr_function:
+        addiu $s2, $s2, 8
+        j encode_jump_r_params
+    get_jalr_function:
+        addiu $s2, $s2, 63497
+    encode_jump_r_params:
+    # encode do registrador s
+    jal fill_register_buffer_endl
+    jal get_register_word
+    sll $v0, $v0, 21
+    addu $s2, $s2, $v0
+    j end_encode_instruction
 
 
 encode_shift_instruction:
-    beq $v1, 4, start_get_d_register_shift
+    beq $v1, 4, encode_shift_params
     beq $v1, 8, get_srl_function
     beq $v1, 12, get_sra_function
     get_srl_function:
         addiu $s2, $s2, 2
-        j start_get_d_register_shift
+        j encode_shift_params
     get_sra_function:
         addiu $s2, $s2, 3
-    start_get_d_register_shift:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_d_register_shift:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_d_register_shift
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_d_register_shift
-    save_d_register_shift:
-        sb $zero, register_buffer($t1)
+    encode_shift_params:
+        # encode do registrador d
+        jal fill_register_buffer
         jal get_register_word
         sll $v0, $v0, 11
         addu $s2, $s2, $v0
-    start_get_t_register_shift:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero  # indice do register_buffer
-    sb $zero, register_buffer($zero)  # zerando register_buffer
-    get_t_register_shift:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_t_register_shift
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_t_register_shift
-    save_t_register_shift:
-        sb $zero, register_buffer($t1)
+        # encode do registrador t
+        jal fill_register_buffer    
         jal get_register_word
         sll $v0, $v0, 16
         addu $s2, $s2, $v0
-    start_get_a_shift:
-    move $t1, $zero  # indice do dec_asciiz_buffer
-    sb $zero, dec_asciiz_buffer($zero)
-    get_a_shift:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_a_shift
-        beq $t0, '\n', save_a_shift
-        beq $t0, ' ', save_a_shift
-        addi $s0, $s0, 1
-        sb $t0, dec_asciiz_buffer($t1)
-        addi $t1, $t1, 1
-        j get_a_shift
-    save_a_shift:
-        sb $zero, dec_asciiz_buffer($t1)
-        jal convert_dec_asciiz_to_word
-        bgt $v0, 31, internal_error_bits_conversion
-        sll $v0, $v0, 6
-        addu $s2, $s2, $v0
+        # encode do shift amount
+        move $t1, $zero  # indice do dec_asciiz_buffer
+        sb $zero, dec_asciiz_buffer($zero)
+        get_a_shift:
+            lb $t0, asm_text_content($s0)
+            beq $t0, $zero, save_a_shift
+            beq $t0, '\n', save_a_shift
+            beq $t0, ' ', save_a_shift
+            addi $s0, $s0, 1
+            sb $t0, dec_asciiz_buffer($t1)
+            addi $t1, $t1, 1
+            j get_a_shift
+        save_a_shift:
+            sb $zero, dec_asciiz_buffer($t1)
+            jal convert_dec_asciiz_to_word
+            bgt $v0, 31, internal_error_bits_conversion
+            sll $v0, $v0, 6
+            addu $s2, $s2, $v0
         j end_encode_instruction
-
 
 encode_shift_v_instruction:
     beq $v1, 5, get_sllv_function
     beq $v1, 10, get_srav_function
     get_sllv_function:
         addiu $s2, $s2, 4
-        j start_get_d_register_shiftv
+        j encode_shift_v_params
     get_srav_function:
         addiu $s2, $s2, 7
-    start_get_d_register_shiftv:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        bne $t0, '$', error_unknown_instruction
-        move $t1, $zero
-        sb $zero, register_buffer($zero)
-    get_d_register_shiftv:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_d_register_shiftv
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_d_register_shiftv
-    save_d_register_shiftv:
-        sb $zero, register_buffer($t1)
+    encode_shift_v_params:
+        # encode do registrador d
+        jal fill_register_buffer
         jal get_register_word
         sll $v0, $v0, 11
         addu $s2, $s2, $v0
-    start_get_t_register_shiftv:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero  # indice do register_buffer
-    sb $zero, register_buffer($zero)  # zerando register_buffer
-    get_t_register_shiftv:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_t_register_shiftv
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_t_register_shiftv
-    save_t_register_shiftv:
-        sb $zero, register_buffer($t1)
+        # encode do registrador t
+        jal fill_register_buffer
         jal get_register_word
         sll $v0, $v0, 16
         addu $s2, $s2, $v0
-    start_get_s_register_shiftv:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero  # indice do register_buffer
-    sb $zero, register_buffer($zero)  # zerando register_buffer
-    get_s_register_shiftv:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_s_register_shiftv
-        beq $t0, '\n', save_s_register_shiftv
-        beq $t0, ' ', save_s_register_shiftv
-        addi $s0, $s0, 1
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_s_register_shiftv
-    save_s_register_shiftv:
-        sb $zero, register_buffer($t1)
+        # encode do registrador s
+        jal fill_register_buffer_endl
         jal get_register_word
         sll $v0, $v0, 21
         addu $s2, $s2, $v0
         j end_encode_instruction
-
 
 encode_cl_instruction:
     beq $v1, 4, get_clo_function
     beq $v1, 8, get_clz_function
     get_clo_function:
         addiu $s2, $s2, 1879048225
-        j start_get_d_register_cl
+        j encode_cl_params
     get_clz_function:
         addiu $s2, $s2, 1879048224
-    start_get_d_register_cl:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_d_register_cl:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_d_register_cl
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_d_register_cl
-    save_d_register_cl:
-        sb $zero, register_buffer($t1)
+    encode_cl_params:
+        # encode do registrador d
+        jal fill_register_buffer
         jal get_register_word
         sll $v0, $v0, 11
         addu $s2, $s2, $v0
-    start_get_s_register_cl:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_s_register_cl:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_s_register_cl
-        beq $t0, '\n', save_s_register_cl
-        beq $t0, ' ', save_s_register_cl
-        addi $s0, $s0, 1
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_s_register_cl
-    save_s_register_cl:
-        sb $zero, register_buffer($t1)
+        # encode do registrador s
+        jal fill_register_buffer_endl
         jal get_register_word
         sll $v0, $v0, 21
         addu $s2, $s2, $v0
         j end_encode_instruction
-
 
 encode_arithlog_i_instruction:
     beq $v1, 5, get_addi_opcode
@@ -1402,102 +1313,31 @@ encode_arithlog_i_instruction:
     beq $v1, 30, get_slti_opcode
     get_addi_opcode:
         addiu $s2, $s2, 0x20000000
-        j start_get_t_register_arithlog_i
+        j encode_arithlog_i_params
     get_andi_opcode:
         addiu $s2, $s2, 0x30000000
-        j start_get_t_register_arithlog_i
+        j encode_arithlog_i_params
     get_ori_opcode:
         addiu $s2, $s2, 0x34000000
-        j start_get_t_register_arithlog_i
+        j encode_arithlog_i_params
     get_xori_opcode:
         addiu $s2, $s2, 0x38000000
-        j start_get_t_register_arithlog_i
+        j encode_arithlog_i_params
     get_addiu_opcode:
         addiu $s2, $s2, 0x24000000
-        j start_get_t_register_arithlog_i
+        j encode_arithlog_i_params
     get_slti_opcode:
         addiu $s2, $s2, 0x28000000
-    start_get_t_register_arithlog_i:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_t_register_arithlog_i:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_t_register_arithlog_i
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_t_register_arithlog_i
-    save_t_register_arithlog_i:
-        sb $zero, register_buffer($t1)
+    encode_arithlog_i_params:
+        jal fill_register_buffer
         jal get_register_word
-        sll $v0, $v0, 16
+        sll $v0, $v0, 16  # registrador t
         addu $s2, $s2, $v0
-    start_get_s_register_arithlog_i:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero  # indice do register_buffer
-    sb $zero, register_buffer($zero)  # zerando register_buffer
-    get_s_register_arithlog_i:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_s_register_arithlog_i
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_s_register_arithlog_i
-    save_s_register_arithlog_i:
-        sb $zero, register_buffer($t1)
+        jal fill_register_buffer
         jal get_register_word
-        sll $v0, $v0, 21
+        sll $v0, $v0, 21  # registrador s
         addu $s2, $s2, $v0
-    start_get_i_arithlog_i:
-    move $t1, $zero  # indice do buffer que vai armazenar i
-    lb $t0, asm_text_content($s0)
-    bne $t0, '0', start_get_i_dec_arithlog_i
-    addi $s0, $s0, 1
-    lb $t0, asm_text_content($s0)
-    bne $t0, 'x', start_get_i_dec_arithlog_i
-    addi $s0, $s0, 1
-    j start_get_i_hex_arithlog_i
-    start_get_i_dec_arithlog_i:
-    sb $zero, dec_asciiz_buffer($zero)
-    get_i_dec_arithlog_i:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_i_dec_arithlog_i
-        beq $t0, '\n', save_i_dec_arithlog_i
-        beq $t0, ' ', save_i_dec_arithlog_i
-        addi $s0, $s0, 1
-        sb $t0, dec_asciiz_buffer($t1)
-        addi $t1, $t1, 1
-        j get_i_dec_arithlog_i
-    save_i_dec_arithlog_i:
-        sb $zero, dec_asciiz_buffer($t1)
-        jal convert_dec_asciiz_to_word
-        bgt $v0, 0xffff, internal_error_bits_conversion
-        addu $s2, $s2, $v0
-        j end_encode_instruction
-    start_get_i_hex_arithlog_i:
-    sb $zero, hex_asciiz_buffer($zero)
-    get_i_hex_arithlog_i:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_i_hex_arithlog_i
-        beq $t0, '\n', save_i_hex_arithlog_i
-        beq $t0, ' ', save_i_hex_arithlog_i
-        addi $s0, $s0, 1
-        sb $t0, hex_asciiz_buffer($t1)
-        addi $t1, $t1, 1
-        j get_i_hex_arithlog_i
-    save_i_hex_arithlog_i:
-        sb $zero, hex_asciiz_buffer($t1)
-        la $a0, hex_asciiz_buffer
-        jal convert_hex_asciiz_to_word
-        bgt $v0, 0xffff, internal_error_bits_conversion
-        addu $s2, $s2, $v0
-        j end_encode_instruction
-
+        j encode_i
 
 encode_branch_z_instruction:
     beq $v1, 5, get_bgez_opcode
@@ -1505,54 +1345,18 @@ encode_branch_z_instruction:
     beq $v1, 19, get_bltzal_opcode
     get_bgez_opcode:
         addiu $s2, $s2, 0x04010000
-        j start_get_s_register_branchz
+        j encode_branch_z_params
     get_bgezal_opcode:
         addiu $s2, $s2, 0x04110000
-        j start_get_s_register_branchz
+        j encode_branch_z_params
     get_bltzal_opcode:
         addiu $s2, $s2, 0x04100000
-    start_get_s_register_branchz:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_s_register_branchz:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_s_register_branchz
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_s_register_branchz
-    save_s_register_branchz:
-        sb $zero, register_buffer($t1)
+    encode_branch_z_params:
+        jal fill_register_buffer
         jal get_register_word
         sll $v0, $v0, 21
         addu $s2, $s2, $v0
-    start_get_label_branchz:
-    move $t1, $zero
-    sb $zero, label_buffer($zero)
-    get_label_branchz:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_label_branchz
-        beq $t0, '\n', save_label_branchz
-        beq $t0, ' ', error_syntax
-        addi $s0, $s0, 1
-        sb $t0, label_buffer($t1)
-        addi $t1, $t1, 1
-        j get_label_branchz
-    save_label_branchz:
-        sb $zero, label_buffer($t1)
-        la $a0, text_labels
-        jal get_label_addr
-        beq $v0, $zero, error_syntax
-        srl $v1, $v1, 2  # v1 recebe addr_label/4
-        addi $t2, $s1, 0x00100001  # t2 recebe (PC + 4)/4
-        sub $v1, $v1, $t2  # v1 recebe (addr_label - PC + 4)/4
-        andi $v1, $v1, 0xffff  # filtra os bytes do imm que vai para a montagem da instrucao
-        addu $s2, $s2, $v1
-        j end_encode_instruction
-
+        j encode_label_branch
 
 encode_load_store_instruction:
     beq $v1, 3, get_lw_opcode
@@ -1562,33 +1366,20 @@ encode_load_store_instruction:
     beq $v1, 16, get_lhu_opcode
     get_lw_opcode:
         addiu $s2, $s2, 0x8c000000
-        j start_get_t_register_loadstore
+        j encoce_load_store_params
     get_sw_opcode:
         addiu $s2, $s2, 0xac000000
-        j start_get_t_register_loadstore
+        j encoce_load_store_params
     get_lb_opcode:
         addiu $s2, $s2, 0x80000000
-        j start_get_t_register_loadstore
+        j encoce_load_store_params
     get_sb_opcode:
         addiu $s2, $s2, 0xa0000000
-        j start_get_t_register_loadstore
+        j encoce_load_store_params
     get_lhu_opcode:
         addiu $s2, $s2, 0x94000000
-    start_get_t_register_loadstore:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_t_register_loadstore:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_t_register_loadstore
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_t_register_loadstore
-    save_t_register_loadstore:
-        sb $zero, register_buffer($t1)
+    encoce_load_store_params:
+        jal fill_register_buffer
         jal get_register_word
         sll $v0, $v0, 16
         addu $s2, $s2, $v0
@@ -1659,170 +1450,43 @@ encode_load_store_instruction:
         bne $t0, '\n', error_syntax
         j end_encode_instruction
 
-
 encode_branch_instruction:
     beq $v1, 4, get_beq_opcode
     beq $v1, 8, get_bne_opcode
     get_beq_opcode:
         addiu $s2, $s2, 0x10000000
-        j start_get_s_register_branch
+        j encode_branch_params
     get_bne_opcode:
         addiu $s2, $s2, 0x14000000
-    start_get_s_register_branch:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_s_register_branch:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_s_register_branch
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_s_register_branch
-    save_s_register_branch:
-        sb $zero, register_buffer($t1)
+    encode_branch_params:
+        jal fill_register_buffer
         jal get_register_word
         sll $v0, $v0, 21
         addu $s2, $s2, $v0
-    start_get_t_register_branch:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_t_register_branch:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_t_register_branch
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_t_register_branch
-    save_t_register_branch:
-        sb $zero, register_buffer($t1)
+        jal fill_register_buffer
         jal get_register_word
         sll $v0, $v0, 16
         addu $s2, $s2, $v0
-    start_get_label_branch:
-    move $t1, $zero
-    sb $zero, label_buffer($zero)
-    get_label_branch:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_label_branch
-        beq $t0, '\n', save_label_branch
-        beq $t0, ' ', error_syntax
-        addi $s0, $s0, 1
-        sb $t0, label_buffer($t1)
-        addi $t1, $t1, 1
-        j get_label_branch
-    save_label_branch:
-        sb $zero, label_buffer($t1)
-        la $a0, text_labels
-        jal get_label_addr
-        beq $v0, $zero, error_syntax
-        srl $v1, $v1, 2  # v1 recebe addr_label/4
-        addi $t2, $s1, 0x00100001  # t2 recebe (PC + 4)/4
-        sub $v1, $v1, $t2  # v1 recebe (addr_label - PC + 4)/4
-        andi $v1, $v1, 0xffff  # filtra os bytes do imm que vai para a montagem da instrucao
-        addu $s2, $s2, $v1
-        j end_encode_instruction
-
+        j encode_label_branch
 
 encode_load_i_instruction:
     addiu $s2, $s2, 0x3c000000
-    start_get_t_register_loadi:
-    lb $t0, asm_text_content($s0)
-    addi $s0, $s0, 1
-    bne $t0, '$', error_unknown_instruction
-    move $t1, $zero
-    sb $zero, register_buffer($zero)
-    get_t_register_loadi:
-        lb $t0, asm_text_content($s0)
-        addi $s0, $s0, 1
-        beq $t0, ' ', save_t_register_loadi
-        sb $t0, register_buffer($t1)
-        addi $t1, $t1, 1
-        j get_t_register_loadi
-    save_t_register_loadi:
-        sb $zero, register_buffer($t1)
-        jal get_register_word
-        sll $v0, $v0, 16
-        addu $s2, $s2, $v0
-    start_get_i_loadi:
-    move $t1, $zero  # indice do buffer que vai armazenar i
-    lb $t0, asm_text_content($s0)
-    bne $t0, '0', start_get_i_dec_loadi
-    addi $s0, $s0, 1
-    lb $t0, asm_text_content($s0)
-    bne $t0, 'x', start_get_i_dec_loadi
-    addi $s0, $s0, 1
-    j start_get_i_hex_loadi
-    start_get_i_dec_loadi:
-    sb $zero, dec_asciiz_buffer($zero)
-    get_i_dec_loadi:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_i_dec_loadi
-        beq $t0, '\n', save_i_dec_loadi
-        beq $t0, ' ', save_i_dec_loadi
-        addi $s0, $s0, 1
-        sb $t0, dec_asciiz_buffer($t1)
-        addi $t1, $t1, 1
-        j get_i_dec_loadi
-    save_i_dec_loadi:
-        sb $zero, dec_asciiz_buffer($t1)
-        jal convert_dec_asciiz_to_word
-        bgt $v0, 0xffff, internal_error_bits_conversion
-        addu $s2, $s2, $v0
-        j end_encode_instruction
-    start_get_i_hex_loadi:
-    sb $zero, hex_asciiz_buffer($zero)
-    get_i_hex_loadi:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_i_hex_loadi
-        beq $t0, '\n', save_i_hex_loadi
-        beq $t0, ' ', save_i_hex_loadi
-        addi $s0, $s0, 1
-        sb $t0, hex_asciiz_buffer($t1)
-        addi $t1, $t1, 1
-        j get_i_hex_loadi
-    save_i_hex_loadi:
-        sb $zero, hex_asciiz_buffer($t1)
-        la $a0, hex_asciiz_buffer
-        jal convert_hex_asciiz_to_word
-        bgt $v0, 0xffff, internal_error_bits_conversion
-        addu $s2, $s2, $v0
-        j end_encode_instruction
-
+    jal fill_register_buffer
+    jal get_register_word
+    sll $v0, $v0, 16
+    addu $s2, $s2, $v0
+    j encode_i
 
 encode_jump_instruction:
     beq $v1, 2, get_j_opcode
     beq $v1, 6, get_jal_opcode
     get_j_opcode:
         addiu $s2, $s2, 0x8000000
-        j start_get_label_jump
+        j encode_jump_params
     get_jal_opcode:
         addiu $s2, $s2, 0xc000000
-    start_get_label_jump:
-    move $t1, $zero  # indice do label_buffer
-    sb $zero, label_buffer($zero)  # zerando label_buffer
-    get_label_jump:
-        lb $t0, asm_text_content($s0)
-        beq $t0, $zero, save_label_jump
-        beq $t0, '\n', save_label_jump
-        beq $t0, ' ', error_syntax
-        addi $s0, $s0, 1
-        sb $t0, label_buffer($t1)
-        addi $t1, $t1, 1
-        j get_label_jump
-    save_label_jump:
-        sb $zero, label_buffer($t1)
-        la $a0, text_labels
-        jal get_label_addr
-        beq $v0, $zero, error_syntax
-        srl $v1, $v1, 2
-        addu $s2, $s2, $v1
-        j end_encode_instruction
+    encode_jump_params:
+        j encode_label_jump
 
 
 ## Entrada: $a0: ponteiro para o conteudo asciiz a ser normalizado
@@ -2289,8 +1953,7 @@ error_conversion_hex_asciiz_msg: .asciiz "Error: erro ao ler numero hexadecimal"
 instructions_arithlog: .asciiz "add;sub;and;or;nor;xor;slt;addu;subu;movn;sltu;mul;"
 instructions_divmult: .asciiz "div;mult;"
 instructions_move_from: .asciiz "mfhi;mflo;"
-instructions_jump_r: .asciiz "jr;"
-instructions_jump_alr: .asciiz "jalr;"
+instructions_jump_r: .asciiz "jr;jalr;"
 instructions_shift: .asciiz "sll;srl;sra;"
 instructions_shift_v: .asciiz "sllv;srav;"
 instructions_cl: .asciiz "clo;clz;"
