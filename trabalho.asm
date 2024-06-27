@@ -55,19 +55,19 @@ convert_hex_asciiz_to_word:
         lb $t0, 0($a0)
         beq $t0, $zero, end_convert_hex_asciiz_to_word
         addi $a0, $a0, 1
-        blt $t0, 48, error_conversion_hex_asciiz
+        blt $t0, 48, error_conversion_word_asciiz
         bgt $t0, 57, read_upper_alpha_digit_hex
         sub $t0, $t0, '0'
         j convert_digit_hex
         read_upper_alpha_digit_hex:
-        blt $t0, 65, error_conversion_hex_asciiz
+        blt $t0, 65, error_conversion_word_asciiz
         bgt $t0, 70, read_lower_alpha_digit_hex
         sub $t0, $t0, 'A'
         addi $t0, $t0, 10
         j convert_digit_hex
         read_lower_alpha_digit_hex:
-        blt $t0, 97, error_conversion_hex_asciiz
-        bgt $t0, 102, error_conversion_hex_asciiz
+        blt $t0, 97, error_conversion_word_asciiz
+        bgt $t0, 102, error_conversion_word_asciiz
         sub $t0, $t0, 'a'
         addi $t0, $t0, 10
         convert_digit_hex:
@@ -95,6 +95,8 @@ convert_dec_asciiz_to_word:
     convert_dec_asciiz_to_word_loop:
         lb $t0, dec_asciiz_buffer($t1)
         beq $t0, $zero, end_convert_dec_asciiz_to_word
+        blt $t0, 48, error_conversion_word_asciiz
+        bgt $t0, 58, error_conversion_word_asciiz
         addi $t1, $t1, 1
         sub $t0, $t0, '0'
         mul $t2, $t2, 10
@@ -1855,8 +1857,8 @@ internal_error_bits_conversion:
     la $a0, internal_error_bits_conversion_msg
     j error
 ## Tratamento de erro de conversao de numero hexadecimal
-error_conversion_hex_asciiz:
-    la $a0, error_conversion_hex_asciiz_msg
+error_conversion_word_asciiz:
+    la $a0, error_conversion_word_asciiz_msg
     j error
 error:
     li $v0, 4
@@ -1877,7 +1879,7 @@ error_data_type_msg: .asciiz "Error: tipo de dado não reconhecido"
 error_register_syntax_msg: .asciiz "Error: nao foi possivel compreender o registrador passado"
 error_unknown_opcode_msg: .asciiz "Error: opcode desconhecido"
 error_unknown_instruction_msg: .asciiz "Error: instrucao desconhecida"
-error_conversion_hex_asciiz_msg: .asciiz "Error: erro ao ler numero hexadecimal"
+error_conversion_word_asciiz_msg: .asciiz "Error: word passada em formato invalido"
 
 instructions_arithlog: .asciiz "add;sub;and;or;nor;xor;slt;addu;subu;movn;sltu;mul;"
 instructions_divmult: .asciiz "div;mult;"
