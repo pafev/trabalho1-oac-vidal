@@ -10,8 +10,8 @@ label_buffer: .space 20
 mif_addr_buffer: .space 9  # formato: "00000000"
 mif_value_buffer: .space 9  # formato: "00000000"
 mif_line_buffer: .space 22  # formato: "00000000 : 00000000;"
-data_labels: .space 128  # formato "label:${addr};label2:${addr + 4x};-"
-text_labels: .space 128  # formato "label:${addr};label2:${addr + 4x};-"
+data_labels: .space 128  # formato "label:<addr>;label2:<addr + 4>;-"
+text_labels: .space 128  # formato "label:<addr>;label2:<addr + 4>;-"
 dec_asciiz_buffer: .space 11
 hex_asciiz_buffer: .space 9
 register_buffer: .space 5
@@ -79,7 +79,7 @@ convert_hex_asciiz_to_word:
     jr $ra
 
 
-## Entrada: nada, pois utilizará no dec_asciiz_buffer como entrada
+## Entrada: utilizará o dec_asciiz_buffer como entrada
 ## Saida:   $v0: word com o valor convertido
 convert_dec_asciiz_to_word:
     move $t1, $zero  # indice do dec_asciiz_buffer
@@ -205,7 +205,7 @@ convert_word_to_hex_asciiz:
     jr $ra
 
 
-## Entrada: nada, pois a string do registrador estara em register_buffer
+## Entrada: utilizará o asciiz em register_buffer como entrada
 ## Saida: $v0: os 5 bits que representam a string passada como registrador
 get_register_word:
     la $t1, register_buffer
@@ -561,8 +561,8 @@ save_label:
     jr $ra
 
 
-## Entrada: nada, pois o próprio asm_text_content é examinado
-## Saida:   nada, pois os próprios asm_text_content e text_labels são alterados
+## Entrada: o próprio asm_text_content é a entrada
+## Saida:   os próprios asm_text_content e text_labels são alterados
 extract_text_labels:
     addi $sp, $sp, -20
     sw $s3, 16($sp)
@@ -623,14 +623,13 @@ extract_text_labels:
 
 ## Funcoes Principais
 
-## Entrada: nada
 ## Saida: $v0: tamanho do mif_data_content
 encode_data_asm:
     addi $sp, $sp, -4
     sw $ra, 0($sp)
     move $s0, $zero  # indice do asm_data_content
     move $s1, $zero  # indice do mif_data_content
-    move $s2, $zero  # valor do endereço asm
+    li $s2, 0x10010000  # valor do endereço asm
     move $s3, $zero  # valor do endereço mif
     # coloca '-' em data_labels
     li $t0, 45
@@ -648,16 +647,16 @@ encode_data_asm:
         addi $s0, $s0, 1  # incrementa para dps pegar o prox byte
         move $t6, $zero  # zera flag de começo de label
         beq $t0, '\n', error_syntax  # se tem uma quebra de linha no meio da label, é problema
-        beq $t0, $zero, error_syntax
+        beq $t0, $zero, error_syntax # se a label terminou do nada, é problema
         beq $t0, ':', save_label_for_asm  # se é o fim da label, temos que gravar ela pro mips
-        sb $t0, label_buffer($t1)
+        sb $t0, label_buffer($t1)  # guarda char da label no label_buffer
         addi $t1, $t1, 1
-        j identifying_label
+        j identifying_label  # itera para o prox char da label
     save_label_for_asm:
-        sb $zero, label_buffer($t1)
+        sb $zero, label_buffer($t1)  # fecha a string em label_buffer
         move $a0, $s2  # valor do endereço asm
         la $a1, data_labels
-        jal save_label
+        jal save_label  # grava label em data_labels
         sb $zero, label_buffer($zero)
     identifying_data_type:
         lb $t0, asm_data_content($s0)
@@ -682,7 +681,6 @@ encode_data_asm:
         lb $t0, asm_data_content($s0)
         addi $s0, $s0, 1
         bne $t0, ' ', error_data_type
-        j identifying_data_value
     identifying_data_value:
         lb $t0, asm_data_content($s0)
         beq $t0, $zero, end_encode_data_asm
@@ -702,7 +700,7 @@ encode_data_asm:
     decimal_data_value:
         lb $t0, asm_data_content($s0)
         addi $s0, $s0, 1
-        blt $t0, 48, isnt_num_decimal_data_value  # se é um número, continua para guardar no int_asciiz_bufer iterativamente
+        blt $t0, 48, isnt_num_decimal_data_value
         bgt $t0, 57, error_syntax
         sb $t0, dec_asciiz_buffer($t1)
         addi $t1, $t1, 1
@@ -717,25 +715,25 @@ encode_data_asm:
         addi $t1, $t1, 1
         j decimal_data_value
     end_decimal_data_value:
-        # -- pega o que tá no dec_asciiz_buffer e converte para hexa asciiz
+        # pega o que tá no dec_asciiz_buffer e converte para hexa asciiz
         sb $zero, dec_asciiz_buffer($t1)
         li $a0, 8
         la $a1, mif_value_buffer
-        jal convert_dec_asciiz_to_hex_asciiz  # preenchi o mif_value_buffer
-        # -- pega o endereço do data do mif e converte para hexa asciiz
+        jal convert_dec_asciiz_to_hex_asciiz  # preenche o mif_value_buffer
+        # pega o endereço do data do mif e converte para hexa asciiz
         li $a0, 8
         move $a1, $s3
         move $a2, $zero
         la $a3, mif_addr_buffer
-        jal convert_word_to_hex_asciiz  # preenchi o mif_addr_buffer
-        # -- escreve uma linha no mif_data_content
+        jal convert_word_to_hex_asciiz  # preenche o mif_addr_buffer
+        # escreve uma linha no mif_data_content
         la $a0, mif_data_content
         move $a1, $s1
         jal generate_mif_line
-        # -- zera buffers
+        # zera buffers
         sb $zero, mif_value_buffer($zero)
         sb $zero, mif_addr_buffer($zero) 
-        # -- atualiza indices dos mif_data_content e asm_data_content
+        # atualiza indices dos mif_data_content e asm_data_content
         move $s1, $v0
         addi $s2, $s2, 4  # atualizou endereço do data do asm
         addi $s3, $s3, 1  # atualizou endereço do data do mif
@@ -747,14 +745,12 @@ encode_data_asm:
             beq $t0, $zero, end_count_digits_hex_data_value
             beq $t0, ' ', end_count_digits_hex_data_value
             beq $t0, '\n', end_count_digits_hex_data_value
-            blt $t0, 48, error_syntax
-            beq $t0, 'a', valid_digit_hex_data_value
-            beq $t0, 'b', valid_digit_hex_data_value
-            beq $t0, 'c', valid_digit_hex_data_value
-            beq $t0, 'd', valid_digit_hex_data_value
-            beq $t0, 'e', valid_digit_hex_data_value
-            beq $t0, 'f', valid_digit_hex_data_value
-            bgt $t0, 57, error_syntax
+            blt $t0, 48, error_conversion_word_asciiz
+            blt $t0, 58, valid_digit_hex_data_value
+            blt $t0, 65, error_conversion_word_asciiz
+            blt $t0, 71, valid_digit_hex_data_value
+            blt $t0, 97, error_conversion_word_asciiz
+            bgt $t0, 102, error_conversion_word_asciiz
             valid_digit_hex_data_value:
             addi $t1, $t1, 1
             j count_digits_hex_data_value
@@ -779,21 +775,21 @@ encode_data_asm:
             j fill_zeros_hex_mif_value
         end_hex_data_value:
             li $t1, 8
-            sb $zero, mif_value_buffer($t1)  # finalizei de preencher o mif_value_buffer
-            # -- pega o endereço do data do mif e converte para hexa asciiz
+            sb $zero, mif_value_buffer($t1)  # finaliza de preencher o mif_value_buffer
+            # pega o endereço do data do mif e converte para hexa asciiz
             li $a0, 8
             move $a1, $s3
             move $a2, $zero
             la $a3, mif_addr_buffer
-            jal convert_word_to_hex_asciiz  # preenchi o mif_addr_buffer
-             # -- escreve uma linha no mif_data_content
+            jal convert_word_to_hex_asciiz  # preenche o mif_addr_buffer
+             # escreve uma linha no mif_data_content
             la $a0, mif_data_content
             move $a1, $s1
             jal generate_mif_line
-            # -- zera buffers
+            # zera buffers
             sb $zero, mif_value_buffer($zero)
             sb $zero, mif_addr_buffer($zero) 
-            # -- atualiza indices dos mif_data_content e asm_data_content
+            # atualiza indices dos mif_data_content e asm_data_content
             addi $s0, $s0, 1
             move $s1, $v0
             addi $s2, $s2, 4  # atualizou endereço do data do asm
@@ -806,7 +802,6 @@ encode_data_asm:
     jr $ra
 
 
-## Entrada: Nada
 ## Saida: $v0: tamanho do mif_text_content
 encode_text_asm:
     addi $sp, $sp, -4
@@ -1056,7 +1051,16 @@ encode_i:
         j end_encode_instruction
 
 encode_pseudo_instruction:
-    beq $v1, 4, get_addi_opcode
+    beq $v1, 4, treat_add_pseudo
+    add $zero $t2 $t3
+    treat_add_pseudo:
+        addi $t1, $s0, 8
+        lb $t0, asm_text_content($t1)
+        beq $t0, '$', get_add_function
+        addi $t1, $t1, 2
+        lb $t0, asm_text_content($t1)
+        beq $t0, '$', get_add_function
+        j get_addi_opcode
 
 encode_arithlog_instruction:
     beq $v1, 4, get_add_function
@@ -1449,7 +1453,7 @@ encode_jump_instruction:
 
 
 ## Entrada: $a0: ponteiro para o conteudo asciiz a ser normalizado
-## Saida: nada, o próprio conteudo é diretamente normalizado
+## Saida: o próprio conteudo é diretamente normalizado
 format_content:
     move $t0, $a0  # guarda ponteiro para iterar em todos os chars do conteudo
     move $t3, $a0  # guarda ponteiro para sobrescrever conteudo com chars adequados
@@ -1579,7 +1583,7 @@ split_asm_content:
 ## Entrada: $a0: endereço do mif_xxxx_content que deseja escrever a linha,
 ##          a partir do que há nos mif_addr_buffer e mif_value_buffer
 ##          $a1: indice em que se deseja comecar a escrever a nova linha
-## Saida: nada, pois o próprio mif_xxxx_content será alterado
+## Saida: o próprio mif_xxxx_content será alterado
 generate_mif_line:
     addi $sp, $sp, -4
     sw $s0, 0($sp)
@@ -1624,7 +1628,7 @@ generate_mif_line:
 
 
 ## Entrada: $a0: tamanho do mif_data_content
-## Saida: nada, pois será gerado o arquivo automaticamente a partir dos conteudo pro data.mif
+## Saida: será gerado o arquivo automaticamente a partir dos conteudo pro data.mif
 generate_data_mif:
     addi $sp, $sp, -8
     sw $s0, 4($sp)
@@ -1660,8 +1664,7 @@ generate_data_mif:
     jr $ra
 
 
-## Entrada: nada
-## Saida: nada, pois será alterado diretamente o filepath
+## Saida: será alterado diretamente o filepath
 generate_filepath_data_output:
     move $t0, $zero
     search_dot_filepath:
@@ -1701,7 +1704,7 @@ generate_filepath_data_output:
 
 
 ## Entrada: $a0: tamanho do mif_text_content
-## Saida: nada, pois será gerado o arquivo automaticamente a partir dos conteudo pro text mif
+## Saida: será gerado o arquivo automaticamente a partir dos conteudo pro text mif
 generate_text_mif:
     addi $sp, $sp, -4
     sw $ra, 0($sp)
@@ -1735,8 +1738,7 @@ generate_text_mif:
     jr $ra
 
 
-## Entrada: nada
-## Saida: nada, pois será alterado diretamente o filepath
+## Saida: será alterado diretamente o filepath
 generate_filepath_text_output:
     move $t0, $zero
     search_dot_filepath2:
@@ -1778,7 +1780,7 @@ generate_filepath_text_output:
 ## Funcoes para Interacao com Usuario
 
 ## Entrada: $a0: ponteiro para buffer que irá armazenar conteúdo do arquivo
-## Saida: nada, pois o próprio buffer irá armazenar o conteúdo do arquivo
+## Saida: o próprio buffer irá armazenar o conteúdo do arquivo
 get_input_file:
     # prepara a pilha
     addi $sp, $sp, -4
