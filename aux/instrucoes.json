@@ -81,5 +81,12 @@
       "j label": "000010 ii iiiiiiii iiiiiiii iiiiiiii",
       "jal label": "000011 ii iiiiiiii iiiiiiii iiiiiiii"
     }
+  },
+
+  "Pseudo": {
+    "encode": "variado",
+    "Add": {
+      "add $t $s i": "addi $t $s i"
+    }
   }
 }

@@ -1,6 +1,6 @@
 .data
-filepath: .space 50
-output_filepath: .space 55
+filepath: .space 1000
+output_filepath: .space 1005
 asm_content: .space 1024
 asm_data_content: .space 512
 asm_text_content: .space 512
@@ -605,6 +605,10 @@ extract_text_labels:
         la $a1, text_labels
         jal save_label
         lb $t0, asm_text_content($s3)
+        bne $t0, ' ', skip_treat_space_after_label
+        addi $s3, $s3, 1
+        lb $t0, asm_text_content($s3)
+        skip_treat_space_after_label:
         bne $t0, '\n', skip_check_end_line
         addi $s0, $s3, 1
         j examines_text_label_in_line
@@ -934,6 +938,7 @@ fill_register_buffer:
         lb $t0, asm_text_content($s0)
         addi $s0, $s0, 1
         beq $t0, ' ', end_fill_register_buffer
+        beq $t0, ',', end_fill_register_buffer
         sb $t0, register_buffer($t1)
         addi $t1, $t1, 1
         j loop_fill_register_buffer
@@ -951,7 +956,8 @@ fill_register_buffer_endl:
         lb $t0, asm_text_content($s0)
         beq $t0, $zero, end_fill_register_buffer_endl
         beq $t0, '\n', end_fill_register_buffer_endl
-        beq $t0, ' ', end_fill_register_buffer_endl
+        beq $t0, ' ', error_syntax
+        beq $t0, ',', error_syntax
         addi $s0, $s0, 1
         sb $t0, register_buffer($t1)
         addi $t1, $t1, 1
@@ -968,6 +974,7 @@ encode_label_branch:
         beq $t0, $zero, end_encode_label_branch
         beq $t0, '\n', end_encode_label_branch
         beq $t0, ' ', error_syntax
+        beq $t0, ',', error_syntax
         addi $s0, $s0, 1
         sb $t0, label_buffer($t1)
         addi $t1, $t1, 1
@@ -992,6 +999,7 @@ encode_label_jump:
         beq $t0, $zero, end_encode_label_jump
         beq $t0, '\n', end_encode_label_jump
         beq $t0, ' ', error_syntax
+        beq $t0, ',', error_syntax
         addi $s0, $s0, 1
         sb $t0, label_buffer($t1)
         addi $t1, $t1, 1
@@ -1021,6 +1029,7 @@ encode_i:
         beq $t0, $zero, save_i_dec
         beq $t0, '\n', save_i_dec
         beq $t0, ' ', save_i_dec
+        beq $t0, ',', save_i_dec
         addi $s0, $s0, 1
         sb $t0, dec_asciiz_buffer($t1)
         addi $t1, $t1, 1
@@ -1028,7 +1037,7 @@ encode_i:
     save_i_dec:
         sb $zero, dec_asciiz_buffer($t1)
         jal convert_dec_asciiz_to_word
-        bgt $v0, 0xffff, internal_error_bits_conversion
+        # bgt $v0, 0xffff, internal_error_bits_conversion
         addu $s2, $s2, $v0
         j end_encode_instruction
     start_get_i_hex:
@@ -1038,6 +1047,7 @@ encode_i:
         beq $t0, $zero, save_i_hex
         beq $t0, '\n', save_i_hex
         beq $t0, ' ', save_i_hex
+        beq $t0, ',', save_i_hex
         addi $s0, $s0, 1
         sb $t0, hex_asciiz_buffer($t1)
         addi $t1, $t1, 1
@@ -1052,7 +1062,6 @@ encode_i:
 
 encode_pseudo_instruction:
     beq $v1, 4, treat_add_pseudo
-    add $zero $t2 $t3
     treat_add_pseudo:
         addi $t1, $s0, 8
         lb $t0, asm_text_content($t1)
@@ -1207,7 +1216,8 @@ encode_shift_instruction:
             lb $t0, asm_text_content($s0)
             beq $t0, $zero, save_a_shift
             beq $t0, '\n', save_a_shift
-            beq $t0, ' ', save_a_shift
+            beq $t0, ' ', error_syntax
+            beq $t0, ',', error_syntax
             addi $s0, $s0, 1
             sb $t0, dec_asciiz_buffer($t1)
             addi $t1, $t1, 1
@@ -1464,19 +1474,22 @@ format_content:
         beq $t1, '\n', search_for_start_line
         beq $t1, ' ', search_for_start_line
         beq $t1, ',', search_for_start_line
+        beq $t1, '\t', search_for_start_line
         beq $t1, $zero, end_format_content
-        addi $t0, $t0, -1
-        j loop_format_line
+    addi $t0, $t0, -1
     # após encontrar começo da linha, normalizando ela
     loop_format_line:
         lb $t1, 0($t0)  # char atual
         addi $t0, $t0, 1
-        # ignora virgulas
-        beq $t1, ',', loop_format_line
-        # checa se é um espaço repetido e, se sim, o ignora
-        bne $t1, ' ', skip_check_space
+        # vai checar se eh um espaco, uma tabulacao ou uma virgula indesejada
+        beq $t1, ' ', format_space_tab
+        beq $t1, '\t', format_space_tab
+        beq $t1, ',', format_space_tab
+        j skip_check_space_tab
+        format_space_tab:
         lb $t2, 0($t0)  # guarda prox char (char atual + 1) em t2
         beq $t2, ' ', loop_format_line  # se proximo char é um desses char's, ignora char atual
+        beq $t2, '\t', loop_format_line
         beq $t2, '\n', loop_format_line
         beq $t2, ',', loop_format_line
         beq $t2, ':', loop_format_line
@@ -1484,9 +1497,8 @@ format_content:
         beq $t2, '(', loop_format_line
         beq $t2, '.', loop_format_line
         lb $t2, -2($t0)  # guarda char anterior (char atual - 1) em t2
-        beq $t2, ':', loop_format_line  # se o char anterior é um desses char's, ignora char atual
         beq $t2, '(', loop_format_line
-        skip_check_space:
+        skip_check_space_tab:
         beq $t1, $zero, end_format_content  # fim do conteudo original
         sb $t1, 0($t3)  # guarda char "que pode ser guardado" no conteudo
         addi $t3, $t3, 1
@@ -1794,7 +1806,7 @@ get_input_file:
     # pega a entrada do usuário
     li $v0, 8
     la $a0, filepath
-    la $a1, 50
+    la $a1, 1000
     syscall
     # remove o '\n' no final da entrada do usuário
     la $a0, filepath
