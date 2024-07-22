@@ -1,37 +1,24 @@
-.data
-            128
-0xf
-dados:  .word 4147483649, -2,       
-     0x10000010
-dados2: .word 4,
- 5, 6
-.text
-add $t2,             $t2, $s0
-or $s0, $s0, $t4
-sltu $v0,           $zero, $a1
-mult $t1 $t2
-mfhi     $s0
-jr $ra
-jalr $s0
-label: sllv $s0,     $s4, $s3
-bgez $t1, label
-srav $s3, $a1, $a2
-mul $t1, $t3, $t7
-clo $v0, $v1
-            clz $a1,          $a2
-sll $t1, $t1, 2
-label2: srl $t5, $a3, 31
-addi $t2, $t2, 32
-label3:
-lw $t2, 100   ($a0)
-sb $v1      ,          0x12     ($t3)
-lui $t2 8
-j label
-j label2
-jal label3
-beq $t1   $t3, label3
-bne $t2, $s0, label
-.data
-    dados3:
-    .word 32
-,4322, 0x0313
+  .data
+A:      .word    0x01234ABC	
+B:	.word	0x004A5F32	
+re3s:    
+.word    0x00       	
+  .text             
+        add      $s0, $t1, $t2  
+        lw      $s0, 0($s0)                  
+        add      $s1, $t1, $t2  
+        lw      $s1, 0($s1)     
+        xor     $s2, $s2, $s2   
+	   srav 	 $t1, $s0, $s1 
+        addi    $t0, $zero, 1          
+loop:   beq     $s1,$zero, fim  
+        and     $t1,$s1,$t0 
+        bne     $t1,$zero, soma 
+volta:  srl     $s1,$s1,1        
+        sll     $s0,$s0,1        
+        j       loop
+soma:   addu    $s2, $s2, $s0
+        j       volta
+fim:    add      $t0, $t1, $t2
+        sw      $s2, 0($t0)
+aqui:   j       aqui		 

@@ -650,8 +650,7 @@ encode_data_asm:
         isnt_number_first_char:
         addi $s0, $s0, 1  # incrementa para dps pegar o prox byte
         move $t6, $zero  # zera flag de começo de label
-        beq $t0, '\n', error_syntax  # se tem uma quebra de linha no meio da label, é problema
-        beq $t0, $zero, error_syntax # se a label terminou do nada, é problema
+        blt $t0, 48, error_syntax
         beq $t0, ':', save_label_for_asm  # se é o fim da label, temos que gravar ela pro mips
         sb $t0, label_buffer($t1)  # guarda char da label no label_buffer
         addi $t1, $t1, 1
@@ -684,7 +683,9 @@ encode_data_asm:
         bne $t0, 'd', error_data_type
         lb $t0, asm_data_content($s0)
         addi $s0, $s0, 1
-        bne $t0, ' ', error_data_type
+        beq $t0, ' ', identifying_data_value
+        beq $t0, '\t', identifying_data_value
+        bne $t0, '\n', error_data_type
     identifying_data_value:
         lb $t0, asm_data_content($s0)
         beq $t0, $zero, end_encode_data_asm
@@ -831,6 +832,7 @@ encode_text_asm:
         beq $t0, $zero, error_syntax
         beq $t0, '\n', error_syntax
         beq $t0, ' ', process_text_instruction
+        beq $t0, '\t', process_text_instruction
         sb $t0, instruction_buffer($t1)
         addi $t1, $t1, 1
         j search_for_text_instruction
@@ -939,6 +941,7 @@ fill_register_buffer:
         addi $s0, $s0, 1
         beq $t0, ' ', end_fill_register_buffer
         beq $t0, ',', end_fill_register_buffer
+        beq $t0, '\t', end_fill_register_buffer
         sb $t0, register_buffer($t1)
         addi $t1, $t1, 1
         j loop_fill_register_buffer
@@ -958,6 +961,7 @@ fill_register_buffer_endl:
         beq $t0, '\n', end_fill_register_buffer_endl
         beq $t0, ' ', error_syntax
         beq $t0, ',', error_syntax
+        beq $t0, '\t', error_syntax
         addi $s0, $s0, 1
         sb $t0, register_buffer($t1)
         addi $t1, $t1, 1
@@ -975,6 +979,7 @@ encode_label_branch:
         beq $t0, '\n', end_encode_label_branch
         beq $t0, ' ', error_syntax
         beq $t0, ',', error_syntax
+        beq $t0, '\t', error_syntax
         addi $s0, $s0, 1
         sb $t0, label_buffer($t1)
         addi $t1, $t1, 1
@@ -1000,6 +1005,7 @@ encode_label_jump:
         beq $t0, '\n', end_encode_label_jump
         beq $t0, ' ', error_syntax
         beq $t0, ',', error_syntax
+        beq $t0, '\t', error_syntax
         addi $s0, $s0, 1
         sb $t0, label_buffer($t1)
         addi $t1, $t1, 1
@@ -1030,6 +1036,7 @@ encode_i:
         beq $t0, '\n', save_i_dec
         beq $t0, ' ', save_i_dec
         beq $t0, ',', save_i_dec
+        beq $t0, '\t', save_i_dec
         addi $s0, $s0, 1
         sb $t0, dec_asciiz_buffer($t1)
         addi $t1, $t1, 1
@@ -1048,6 +1055,7 @@ encode_i:
         beq $t0, '\n', save_i_hex
         beq $t0, ' ', save_i_hex
         beq $t0, ',', save_i_hex
+        beq $t0, '\t', save_i_hex
         addi $s0, $s0, 1
         sb $t0, hex_asciiz_buffer($t1)
         addi $t1, $t1, 1
@@ -1902,7 +1910,7 @@ error_unknown_opcode_msg: .asciiz "Error: opcode desconhecido"
 error_unknown_instruction_msg: .asciiz "Error: instrucao desconhecida"
 error_conversion_word_asciiz_msg: .asciiz "Error: word passada em formato invalido"
 
-instructions_pseudo: .asciiz "add;"
+instructions_pseudo: .asciiz "add;la;"
 instructions_arithlog: .asciiz "add;sub;and;or;nor;xor;slt;addu;subu;movn;sltu;mul;"
 instructions_divmult: .asciiz "div;mult;"
 instructions_move_from: .asciiz "mfhi;mflo;"
